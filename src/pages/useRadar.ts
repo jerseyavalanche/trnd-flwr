@@ -8,7 +8,15 @@ const emptyPayload: RadarPayload = {
   status: [],
   themes: [],
   regime: { label: 'Unavailable', stability: 0, volatility: 0, emotionalTemperature: 0, fragmentation: 0 },
-  collisions: []
+  collisions: [],
+  systemStatus: {
+    backend: 'offline',
+    ingestion: 'degraded',
+    storage: { ok: false, path: 'unknown' },
+    modelSynthesis: { status: 'unavailable', detail: 'model synthesis unavailable' },
+    lastScanTime: null,
+    failedSourceCount: 0
+  }
 };
 
 export function useRadar() {

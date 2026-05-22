@@ -1,42 +1,53 @@
-# TRND_FLWR (Phase 1)
+# TRND_FLWR
 
-Mobile-first civilization trend intelligence engine with **real ingestion only**.
+TRND_FLWR is a civilization trend intelligence engine focused on real signal ingestion and honest unavailable-state reporting.
 
-## Stack
-- React + TypeScript + Tailwind
-- Node + Express backend
-- Source adapters with unavailable states
-- SSE live refresh (60s)
-- JSON snapshot persistence fallback (`server/data/radar-cache.json`)
+## Mission
+Observe public data across technology, media, economics, and markets to answer:
+**what is humanity collectively moving toward right now?**
 
-## Real source adapters implemented
-- RSS News: NYT Technology RSS
-- GitHub: repository search API (rolling 14-day window)
-- Reddit: public JSON feed (`r/technology/new`)
-- Markets: Yahoo Finance quote endpoint
-- Economics: FRED observations endpoint (supports `FRED_API_KEY`)
+## Hard rules
+- No mock data
+- No fake dashboards
+- No fake market prices
+- No demo mode
+- Unavailable sources must be shown honestly
+- Free-first infra and free-model-default policy
 
-## Run
+## Free-first architecture
+- Frontend: React + TypeScript + Tailwind
+- Backend: Node/Express + SSE
+- Storage: local JSON fallback now, PostgreSQL-ready later
+- Deployment target: Oracle Cloud Always Free ARM (later, optional)
+
+See:
+- `docs/ARCHITECTURE_FREE_FIRST.md`
+- `docs/DEPLOYMENT_FREE.md`
+- `docs/ORACLE_ALWAYS_FREE.md`
+
+## Local setup
 ```bash
+cp .env.example .env
 npm install
-npm run dev
+npm run local
 ```
 
-Optional env:
-- `VITE_API_BASE_URL` (frontend API base)
-- `FRED_API_KEY` (improves FRED reliability)
-- `RADAR_STORE_PATH` (snapshot file path)
+Useful checks:
+```bash
+npm run lint
+npm run healthcheck
+npm run worker:scan
+```
 
-- Frontend: http://localhost:5173
-- Backend API: http://localhost:4000/api/radar
-- SSE stream: http://localhost:4000/api/stream
+## What works without API keys
+- RSS adapter
+- Reddit public feed adapter
+- GitHub public unauthenticated search (rate-limited)
+- Yahoo market endpoint (provider=yahoo)
+- GDELT adapter (if enabled)
 
-## Phase 1 pages
-- Radar dashboard (source health + live signals)
-- Themes (source-cluster counts)
-- Signal Streams (chronological stream)
-- Decisions Engine (top scored priorities)
-- Content Engine (brief seed from live items)
-- Export Center (download JSON snapshot)
+## What requires keys
+- FRED adapter requires `FRED_API_KEY`
+- OpenRouter synthesis requires `ENABLE_OPENROUTER=true` + `OPENROUTER_API_KEY`
 
-No mock data. If a source fails, it is surfaced as `unavailable` with details.
+If model keys are missing, UI/API reports: `model synthesis unavailable`.

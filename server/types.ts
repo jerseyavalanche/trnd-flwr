@@ -43,6 +43,15 @@ export interface Collision {
   score: number;
 }
 
+export interface SystemStatus {
+  backend: 'online' | 'offline';
+  ingestion: 'ok' | 'degraded';
+  storage: { ok: boolean; path: string; error?: string };
+  modelSynthesis: { status: 'available' | 'unavailable'; detail: string };
+  lastScanTime: string | null;
+  failedSourceCount: number;
+}
+
 export interface RadarPayload {
   generatedAt: string;
   signals: Signal[];
@@ -50,4 +59,5 @@ export interface RadarPayload {
   themes: Theme[];
   regime: Regime;
   collisions: Collision[];
+  systemStatus: SystemStatus;
 }
