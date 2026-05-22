@@ -35,7 +35,11 @@ app.get('/api/sources/status', async (_req, res) => {
 
 
 app.get('/api/metrics', async (_req, res) => {
+  const start = Date.now();
   const payload = await runIntelligence();
+  const durationMs = Date.now() - start;
+  const sourceLatencyMs = Object.fromEntries(payload.status.map((s) => [s.source, s.status === 'ok' ? durationMs : -1]));
+
   res.json({
     generatedAt: payload.generatedAt,
     counters: {
@@ -43,6 +47,13 @@ app.get('/api/metrics', async (_req, res) => {
       sources_failed: payload.systemStatus.failedSourceCount,
       themes_total: payload.themes.length,
       collisions_total: payload.collisions.length
+    },
+    rates: {
+      failed_ratio: payload.status.length ? payload.systemStatus.failedSourceCount / payload.status.length : 0
+    },
+    timings: {
+      ingest_duration_ms: durationMs,
+      source_latency_ms: sourceLatencyMs
     },
     systemStatus: payload.systemStatus,
     sourceStatus: payload.status
