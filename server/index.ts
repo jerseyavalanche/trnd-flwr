@@ -5,6 +5,7 @@ import { loadSnapshot, saveSnapshot, storageStatus } from './store.js';
 
 const app = express();
 app.use(cors());
+app.use(express.json());
 
 app.get('/api/health', (_req, res) => {
   res.json({ ok: true, service: 'trnd_flwr_backend', time: new Date().toISOString() });
@@ -30,6 +31,34 @@ app.get('/api/status', async (_req, res) => {
 app.get('/api/sources/status', async (_req, res) => {
   const payload = await runIntelligence();
   res.json({ generatedAt: payload.generatedAt, status: payload.status });
+});
+
+
+app.get('/api/metrics', async (_req, res) => {
+  const payload = await runIntelligence();
+  res.json({
+    generatedAt: payload.generatedAt,
+    counters: {
+      signals_total: payload.signals.length,
+      sources_failed: payload.systemStatus.failedSourceCount,
+      themes_total: payload.themes.length,
+      collisions_total: payload.collisions.length
+    },
+    systemStatus: payload.systemStatus,
+    sourceStatus: payload.status
+  });
+});
+
+app.post('/api/ingest/webhook', async (_req, res) => {
+  const payload = await runIntelligence();
+  saveSnapshot(payload);
+  res.json({ ok: true, trigger: 'webhook', generatedAt: payload.generatedAt, failedSourceCount: payload.systemStatus.failedSourceCount });
+});
+
+app.post('/api/ingest/n8n', async (_req, res) => {
+  const payload = await runIntelligence();
+  saveSnapshot(payload);
+  res.json({ ok: true, trigger: 'n8n', generatedAt: payload.generatedAt, failedSourceCount: payload.systemStatus.failedSourceCount });
 });
 
 app.get('/api/stream', async (req, res) => {

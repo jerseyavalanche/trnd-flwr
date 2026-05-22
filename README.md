@@ -1,53 +1,67 @@
 # TRND_FLWR
 
-TRND_FLWR is a civilization trend intelligence engine focused on real signal ingestion and honest unavailable-state reporting.
+TRND_FLWR is a civilization trend intelligence engine focused on real public signal ingestion, synthesis, and honest availability reporting.
 
 ## Mission
-Observe public data across technology, media, economics, and markets to answer:
-**what is humanity collectively moving toward right now?**
+Track what humanity is collectively moving toward across technology, economics, markets, media, and behavior.
 
 ## Hard rules
 - No mock data
-- No fake dashboards
-- No fake market prices
+- No fake prices
+- No fake feeds
 - No demo mode
-- Unavailable sources must be shown honestly
-- Free-first infra and free-model-default policy
+- No paid-default infrastructure
+- No paid-default model APIs
+- Unavailable modules/sources must be shown honestly
 
-## Free-first architecture
-- Frontend: React + TypeScript + Tailwind
-- Backend: Node/Express + SSE
-- Storage: local JSON fallback now, PostgreSQL-ready later
-- Deployment target: Oracle Cloud Always Free ARM (later, optional)
+## Free-first architecture (Oracle target)
+Primary deployment target is Oracle Cloud Always Free Ampere A1 ARM VPS.
 
-See:
-- `docs/ARCHITECTURE_FREE_FIRST.md`
-- `docs/DEPLOYMENT_FREE.md`
-- `docs/ORACLE_ALWAYS_FREE.md`
+Phase 1 runs local-first and deploys later with Docker Compose.
 
-## Local setup
+Core stack:
+- React + TypeScript + Tailwind frontend
+- Node/Express backend + SSE
+- real source adapters (RSS, GitHub, Reddit, market, FRED, GDELT)
+- local JSON fallback + PostgreSQL-ready shape
+- status + health + metrics endpoints
+
+Self-hosted modules:
+- Coolify (optional deployment manager)
+- n8n (automation / ingestion workflows)
+- Uptime Kuma (monitoring)
+- Grafana OSS (observability)
+- Postgres (memory moat)
+- Redis (optional queue/cache)
+- Caddy/Nginx (reverse proxy)
+
+## Local run
 ```bash
 cp .env.example .env
 npm install
 npm run local
 ```
 
-Useful checks:
+## Validation commands
 ```bash
 npm run lint
 npm run healthcheck
 npm run worker:scan
 ```
 
-## What works without API keys
-- RSS adapter
-- Reddit public feed adapter
-- GitHub public unauthenticated search (rate-limited)
-- Yahoo market endpoint (provider=yahoo)
-- GDELT adapter (if enabled)
+## Key API routes
+- `GET /api/health`
+- `GET /api/status`
+- `GET /api/sources/status`
+- `GET /api/metrics`
+- `POST /api/ingest/webhook`
+- `POST /api/ingest/n8n`
 
-## What requires keys
-- FRED adapter requires `FRED_API_KEY`
-- OpenRouter synthesis requires `ENABLE_OPENROUTER=true` + `OPENROUTER_API_KEY`
-
-If model keys are missing, UI/API reports: `model synthesis unavailable`.
+## Docs
+- `docs/ARCHITECTURE_FREE_FIRST.md`
+- `docs/FREE_SERVER_ARCHITECTURE.md`
+- `docs/ORACLE_FREE_STACK.md`
+- `docs/SELF_HOSTED_APPS.md`
+- `docs/DEPLOYMENT_FREE.md`
+- `docs/ORACLE_ALWAYS_FREE.md`
+- `infra/README.md`
