@@ -1,0 +1,98 @@
+services:
+  trnd-backend:
+    image: node:20-alpine
+    working_dir: /app
+    command: sh -c "npm ci && npm run dev:server"
+    volumes:
+      - ../:/app
+      - trnd_storage:${TRND_STORAGE_DIR:-/data/trnd-flwr}
+    environment:
+      PORT: ${TRND_PORT:-4000}
+      STORAGE_DIR: ${TRND_STORAGE_DIR:-/data/trnd-flwr}
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      ENABLE_OPENROUTER: "false"
+      ENABLE_OLLAMA: "false"
+    ports:
+      - "4000:${TRND_PORT:-4000}"
+    depends_on:
+      - postgres
+
+  trnd-frontend:
+    image: node:20-alpine
+    working_dir: /app
+    command: sh -c "npm ci && npm run dev:client -- --host 0.0.0.0 --port 5173"
+    volumes:
+      - ../:/app
+    environment:
+      VITE_API_BASE_URL: http://localhost:4000
+    ports:
+      - "5173:5173"
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    command: redis-server --save 60 1
+    volumes:
+      - redis_data:/data
+
+  n8n:
+    image: n8nio/n8n:latest
+    environment:
+      N8N_HOST: ${N8N_HOST}
+      N8N_PORT: ${N8N_PORT}
+      N8N_PROTOCOL: ${N8N_PROTOCOL}
+    ports:
+      - "5678:5678"
+    volumes:
+      - n8n_data:/home/node/.n8n
+
+  uptime-kuma:
+    image: louislam/uptime-kuma:1
+    ports:
+      - "3001:3001"
+    volumes:
+      - uptime_kuma_data:/app/data
+
+  grafana:
+    image: grafana/grafana-oss:latest
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
+    volumes:
+      - grafana_data:/var/lib/grafana
+
+  caddy:
+    image: caddy:2
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - trnd-frontend
+      - trnd-backend
+      - n8n
+      - uptime-kuma
+      - grafana
+
+volumes:
+  trnd_storage:
+  pg_data:
+  redis_data:
+  n8n_data:
+  uptime_kuma_data:
+  grafana_data:
+  caddy_data:
+  caddy_config:
