@@ -1,12 +1,68 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+@import 'tailwindcss';
+
+@theme {
+  --color-app-bg: #0b0d10;
+  --color-surface: #101318;
+  --color-surface-2: #161b22;
+  --color-grid-border: #2a3140;
+  --color-signal-green: #3ddc97;
+  --color-cyan: #5eead4;
+  --color-bull-green: #4ade80;
+  --color-bear-red: #f87171;
+  --color-warn-amber: #fbbf24;
+  --color-muted-fg: #8b95a8;
+  --color-primary-fg: #e8eaed;
+  --color-offline-red: #f87171;
+  --color-gold: #d4a853;
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+}
 
 :root {
   color-scheme: dark;
+  background: #0b0d10;
+  color: #e8eaed;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 13px;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
 }
 
-body {
-  @apply bg-slate-950 text-slate-100 min-h-screen;
-  font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  min-height: 100vh;
+  margin: 0;
+  background: #0b0d10;
+}
+
+button,
+input {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+.pulse-dot {
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 999px;
+  background: #3ddc97;
+  box-shadow: 0 0 8px rgba(61, 220, 151, 0.8);
+}
+
+.ticker {
+  font-variant-numeric: tabular-nums;
+}
+
+.feed-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: #2a3140 transparent;
 }

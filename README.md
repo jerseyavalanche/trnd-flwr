@@ -1,67 +1,46 @@
-# TRND_FLWR
+# TRND_FLWR Signal Index
 
-TRND_FLWR is a civilization trend intelligence engine focused on real public signal ingestion, synthesis, and honest availability reporting.
+Signal Index normalizes source material into ranked signal cards across markets, technology, macro, narrative, social, and prediction-market inputs.
 
-## Mission
-Track what humanity is collectively moving toward across technology, economics, markets, media, and behavior.
+## Canonical Sources
 
-## Hard rules
-- No mock data
-- No fake prices
-- No fake feeds
-- No demo mode
-- No paid-default infrastructure
-- No paid-default model APIs
-- Unavailable modules/sources must be shown honestly
+The canonical source stack lives in `server/sourceRegistry.ts` and is exposed at `GET /api/signals/sources`. Each source record must include `source`, `category`, `trust_tier`, `status`, `timestamp`, and `url`.
 
-## Free-first architecture (Oracle target)
-Primary deployment target is Oracle Cloud Always Free Ampere A1 ARM VPS.
+Source status must be one of:
 
-Phase 1 runs local-first and deploys later with Docker Compose.
+- `LIVE`
+- `DEGRADED`
+- `OFFLINE`
+- `AUTH NEEDED`
+- `LIMITED`
+- `PLANNED`
 
-Core stack:
-- React + TypeScript + Tailwind frontend
-- Node/Express backend + SSE
-- real source adapters (RSS, GitHub, Reddit, market, FRED, GDELT)
-- local JSON fallback + PostgreSQL-ready shape
-- status + health + metrics endpoints
+## Ranking Policy
 
-Self-hosted modules:
-- Coolify (optional deployment manager)
-- n8n (automation / ingestion workflows)
-- Uptime Kuma (monitoring)
-- Grafana OSS (observability)
-- Postgres (memory moat)
-- Redis (optional queue/cache)
-- Caddy/Nginx (reverse proxy)
+Signal Index does not treat all sources equally:
 
-## Local run
+- Official data beats news.
+- News beats social.
+- Social beats influencer claims only when volume or velocity confirms it.
+- Prediction markets are sentiment and expectation signals, not truth.
+- Every item must show source, category, trust tier, timestamp, and URL.
+- Every source must show its current status.
+
+## Source Categories
+
+- `official`: SEC EDGAR, FRED, Treasury Fiscal Data, Federal Reserve, BLS, BEA, CISA, NVD.
+- `market`: Yahoo Finance, CoinGecko, Alpaca, OpenBB, Nasdaq/calendar sources.
+- `tech_ai`: GitHub, Hacker News, arXiv, Papers with Code, Hugging Face, Product Hunt, major AI/company blogs, and release feeds.
+- `news_narrative`: GDELT, BBC, NPR, Reuters/AP public links, Guardian Open Platform, TechCrunch, The Verge, Ars Technica, Axios.
+- `social_culture`: selected Reddit communities, YouTube RSS, Wikipedia current events, Wikipedia pageviews, Bluesky, Mastodon.
+- `prediction`: Polymarket, Kalshi, Metaculus.
+
+## Development
+
 ```bash
-cp .env.example .env
-npm install
-npm run local
+npm run dev
 ```
 
-## Validation commands
 ```bash
-npm run lint
-npm run healthcheck
-npm run worker:scan
+npm run build
 ```
-
-## Key API routes
-- `GET /api/health`
-- `GET /api/status`
-- `GET /api/sources/status`
-- `GET /api/metrics`
-- `POST /api/ingest/webhook`
-- `POST /api/ingest/n8n`
-
-## Docs
-- `docs/ARCHITECTURE_FREE_FIRST.md`
-- `docs/FREE_SERVER_ARCHITECTURE.md`
-- `docs/ORACLE_FREE_STACK.md`
-- `docs/SELF_HOSTED_APPS.md`
-- `docs/DEPLOYMENT_FREE.md`
-- `docs/ORACLE_ALWAYS_FREE.md`
-- `infra/README.md`

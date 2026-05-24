@@ -1,63 +1,51 @@
-export type SignalSource = 'rss' | 'github' | 'reddit' | 'market' | 'economy' | 'gdelt';
-
-export interface Signal {
+export interface SignalCard {
   id: string;
   title: string;
-  source: SignalSource;
+  summary?: string;
+  source: string;
+  source_url?: string;
+  source_category?: SourceCategory;
+  source_trust_tier?: TrustTier;
+  image_url?: string;
+  category?: string;
+  ticker?: string;
+  topic?: string;
+  signal_strength?: number;
+  delta?: number;
+  timestamp: string;
+  why_it_matters?: string;
+  data_status: 'sample' | 'live' | 'stale' | 'unavailable';
+}
+
+export type SourceCategory = 'official' | 'market' | 'tech_ai' | 'news_narrative' | 'social_culture' | 'prediction';
+
+export type TrustTier = 'official' | 'market' | 'news' | 'social' | 'prediction';
+
+export type SourceStatusValue = 'LIVE' | 'DEGRADED' | 'OFFLINE' | 'AUTH NEEDED' | 'LIMITED' | 'PLANNED';
+
+export interface SourceHealth {
+  source: string;
+  category: SourceCategory;
+  trust_tier: TrustTier;
+  status: SourceStatusValue;
   url: string;
   timestamp: string;
-  summary: string;
-  score: number;
-  metrics: Record<string, number | string>;
-  tokens: string[];
+  last_fetch_time: string;
+  card_count: number;
+  latest_error_message?: string;
 }
 
-export interface SourceStatus {
-  source: SignalSource;
-  status: 'ok' | 'unavailable';
-  detail: string;
-  updatedAt: string;
-}
-
-export interface Theme {
-  name: string;
-  strength: number;
-  acceleration: number;
-  confidence: number;
-  emotionalIntensity: number;
-  evidence: string[];
-  linkedSources: SignalSource[];
-}
-
-export interface Regime {
+export type MarketTicker = {
+  symbol: string;
   label: string;
-  stability: number;
-  volatility: number;
-  emotionalTemperature: number;
-  fragmentation: number;
-}
+  price: string;
+  change: string;
+  changePercent: string;
+  trend: 'up' | 'down' | 'flat';
+};
 
-export interface Collision {
-  themes: [string, string];
-  overlapSignals: number;
-  score: number;
-}
-
-export interface SystemStatus {
-  backend: 'online' | 'offline';
-  ingestion: 'ok' | 'degraded';
-  storage: { ok: boolean; path: string; error?: string };
-  modelSynthesis: { status: 'available' | 'unavailable'; detail: string };
-  lastScanTime: string | null;
-  failedSourceCount: number;
-}
-
-export interface RadarPayload {
-  generatedAt: string;
-  signals: Signal[];
-  status: SourceStatus[];
-  themes: Theme[];
-  regime: Regime;
-  collisions: Collision[];
-  systemStatus: SystemStatus;
-}
+export type SourceStatus = {
+  source: string;
+  count: number;
+  status: SourceStatusValue;
+};

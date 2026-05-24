@@ -1,94 +1,121 @@
-import express from 'express';
-import cors from 'cors';
-import { runIntelligence } from './intelligence.js';
-import { loadSnapshot, saveSnapshot, storageStatus } from './store.js';
+import express from "express";
+import type { ErrorRequestHandler } from "express";
+import cors from "cors";
+import dotenv from "dotenv";
+import signalLanesRouter from "./routes/signal-lanes.js";
+import { getConfiguredSignalConnectors } from "./sourceConnectors.js";
+import { getRegistryStatus } from "./realSourceRegistry.js";
+
+dotenv.config();
 
 const app = express();
+
 app.use(cors());
 app.use(express.json());
 
-app.get('/api/health', (_req, res) => {
-  res.json({ ok: true, service: 'trnd_flwr_backend', time: new Date().toISOString() });
-});
+app.use("/api", signalLanesRouter);
 
-app.get('/api/radar', async (_req, res) => {
-  try {
-    const payload = await runIntelligence();
-    saveSnapshot(payload);
-    res.json(payload);
-  } catch {
-    const cached = loadSnapshot();
-    if (cached) return res.json(cached);
-    res.status(503).json({ generatedAt: new Date().toISOString(), signals: [], status: [], themes: [], regime: { label: 'Unavailable', stability: 0, volatility: 0, emotionalTemperature: 0, fragmentation: 0 }, collisions: [], systemStatus: { backend: 'online', ingestion: 'degraded', storage: storageStatus(), modelSynthesis: { status: 'unavailable', detail: 'model synthesis unavailable' }, lastScanTime: null, failedSourceCount: 0 } });
-  }
-});
+const PORT = Number(process.env.PORT ?? 4000);
 
-app.get('/api/status', async (_req, res) => {
-  const payload = await runIntelligence();
-  res.json(payload.systemStatus);
-});
-
-app.get('/api/sources/status', async (_req, res) => {
-  const payload = await runIntelligence();
-  res.json({ generatedAt: payload.generatedAt, status: payload.status });
-});
-
-
-app.get('/api/metrics', async (_req, res) => {
-  const start = Date.now();
-  const payload = await runIntelligence();
-  const durationMs = Date.now() - start;
-  const sourceLatencyMs = Object.fromEntries(payload.status.map((s) => [s.source, s.status === 'ok' ? durationMs : -1]));
-
+app.get("/api/health", (_req, res) => {
   res.json({
-    generatedAt: payload.generatedAt,
-    counters: {
-      signals_total: payload.signals.length,
-      sources_failed: payload.systemStatus.failedSourceCount,
-      themes_total: payload.themes.length,
-      collisions_total: payload.collisions.length
-    },
-    rates: {
-      failed_ratio: payload.status.length ? payload.systemStatus.failedSourceCount / payload.status.length : 0
-    },
-    timings: {
-      ingest_duration_ms: durationMs,
-      source_latency_ms: sourceLatencyMs
-    },
-    systemStatus: payload.systemStatus,
-    sourceStatus: payload.status
+    ok: true,
+    service: "TRND_FLWR",
+    timestamp: new Date().toISOString(),
   });
 });
 
-app.post('/api/ingest/webhook', async (_req, res) => {
-  const payload = await runIntelligence();
-  saveSnapshot(payload);
-  res.json({ ok: true, trigger: 'webhook', generatedAt: payload.generatedAt, failedSourceCount: payload.systemStatus.failedSourceCount });
+app.get("/api/status", (_req, res) => {
+  const connectors = getConfiguredSignalConnectors();
+  const registry = getRegistryStatus();
+
+  res.json({
+    ingestionStatus: registry.status,
+    configuredSources: connectors.map((connector) => connector.id),
+    okSources: connectors.length,
+    degradedSources: connectors.length === 0 ? 1 : 0,
+    errorSources: 0,
+    disabledSources: 0,
+    totalSignals: null,
+    message: registry.message,
+    lastScanAt: new Date().toISOString(),
+  });
 });
 
-app.post('/api/ingest/n8n', async (_req, res) => {
-  const payload = await runIntelligence();
-  saveSnapshot(payload);
-  res.json({ ok: true, trigger: 'n8n', generatedAt: payload.generatedAt, failedSourceCount: payload.systemStatus.failedSourceCount });
+app.get("/api/radar", (_req, res) => {
+  res.json({
+    themes: [],
+    signals: [],
+    items: [],
+    status: "empty",
+    message: "Radar is not configured yet.",
+    timestamp: new Date().toISOString(),
+  });
 });
 
-app.get('/api/stream', async (req, res) => {
-  res.setHeader('Content-Type', 'text/event-stream');
-  res.setHeader('Cache-Control', 'no-cache');
-  res.setHeader('Connection', 'keep-alive');
-
-  const emit = async () => {
-    const payload = await runIntelligence();
-    saveSnapshot(payload);
-    res.write(`data: ${JSON.stringify(payload)}\n\n`);
-  };
-
-  await emit();
-  const timer = setInterval(emit, 60000);
-  req.on('close', () => clearInterval(timer));
+app.get("/api/metrics", (_req, res) => {
+  res.json({
+    uptime: process.uptime(),
+    memory: process.memoryUsage(),
+  });
 });
 
-const port = Number(process.env.PORT || 4000);
-app.listen(port, () => {
-  console.log(`TRND_FLWR backend on http://localhost:${port}`);
+app.get("/api/stream", (_req, res) => {
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+
+  const interval = setInterval(() => {
+    res.write(
+      `data: ${JSON.stringify({
+        heartbeat: true,
+        time: new Date().toISOString(),
+      })}\n\n`
+    );
+  }, 5000);
+
+  _req.on("close", () => {
+    clearInterval(interval);
+  });
+});
+
+app.post("/api/ingest/webhook", (req, res) => {
+  res.json({
+    received: true,
+    payload: req.body,
+    status: "ok",
+    message: "Webhook payload received.",
+  });
+});
+
+app.post("/api/ingest/n8n", (req, res) => {
+  res.json({
+    received: true,
+    payload: req.body,
+    status: "ok",
+    message: "n8n payload received.",
+  });
+});
+
+app.use("/api", (req, res) => {
+  res.status(404).json({
+    status: "error",
+    message: "API route not found",
+    path: req.originalUrl,
+  });
+});
+
+const errorHandler: ErrorRequestHandler = (error, _req, res, next) => {
+  void next;
+  res.status(500).json({
+    status: "error",
+    message: error instanceof Error ? error.message : "Unexpected server error",
+    error: error instanceof Error ? error.message : "Unexpected server error",
+  });
+};
+
+app.use(errorHandler);
+
+app.listen(PORT, () => {
+  console.log(`TRND_FLWR backend running on :${PORT}`);
 });
