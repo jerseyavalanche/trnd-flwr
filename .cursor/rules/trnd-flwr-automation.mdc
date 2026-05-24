@@ -1,0 +1,13 @@
+---
+description: TRND_FLWR Cursor automation workflow
+alwaysApply: true
+---
+
+# TRND_FLWR Automation
+
+- Prefer `npm run verify` before committing or opening PRs. It runs lint, app/server builds, and automation type-checking.
+- Use `npm run cursor:review` for local read-only review of the current branch.
+- Use `npm run cursor:ship` for the full cloud-agent shipping loop after local verification.
+- Cursor cloud automation requires `CURSOR_API_KEY`; do not commit real API keys or Firebase service account JSON.
+- Keep source-ingest changes focused on real data behavior: no fake source records, generated stories, or placeholder market signals.
+- For PRs, branch from the active work branch and avoid force-pushing unless the user explicitly approves it.

@@ -7,8 +7,16 @@
     "dev": "tsc -p tsconfig.server.json && node scripts/dev.mjs",
     "build": "tsc -b && tsc -p tsconfig.server.json && vite build",
     "start-server": "node dist-server/index.js",
+    "verify": "npm run lint && npm run build && npm run automation:typecheck",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "automation:typecheck": "tsc -p tsconfig.automation.json --noEmit",
+    "cursor:local": "tsx scripts/cursor-automation.ts local",
+    "cursor:cloud": "tsx scripts/cursor-automation.ts cloud",
+    "cursor:resume": "tsx scripts/cursor-automation.ts resume",
+    "cursor:review": "tsx scripts/cursor-automation.ts review",
+    "cursor:ship": "tsx scripts/cursor-automation.ts ship",
+    "cursor:help": "tsx scripts/cursor-automation.ts help"
   },
   "dependencies": {
     "axios": "^1.16.1",
@@ -21,6 +29,7 @@
     "rss-parser": "^3.13.0"
   },
   "devDependencies": {
+    "@cursor/sdk": "^1.0.13",
     "@eslint/js": "^10.0.1",
     "@tailwindcss/vite": "^4.3.0",
     "@types/cors": "^2.8.19",
@@ -34,6 +43,7 @@
     "eslint-plugin-react-refresh": "^0.5.2",
     "globals": "^17.6.0",
     "tailwindcss": "^4.3.0",
+    "tsx": "^4.22.3",
     "typescript": "~6.0.2",
     "typescript-eslint": "^8.59.2",
     "vite": "^8.0.12"

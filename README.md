@@ -65,6 +65,37 @@ npm run build
 
 The Vite client proxies `/api` to the local Express server started by `npm run dev`.
 
+## Cursor Automation
+
+Set `CURSOR_API_KEY` locally or as a GitHub Actions repository secret before running Cursor automation.
+
+```bash
+npm run verify
+```
+
+```bash
+npm run cursor:review
+```
+
+```bash
+npm run cursor:local -- "summarize the current repo state"
+```
+
+```bash
+npm run cursor:cloud -- "implement the next ingestion hardening task and open a PR"
+```
+
+```bash
+npm run cursor:ship
+```
+
+- `cursor:review` runs a local, read-only branch review against `origin/main`.
+- `cursor:local` sends a custom local prompt against this checkout.
+- `cursor:cloud` creates a cloud agent from the current branch or `CURSOR_STARTING_REF`; it auto-creates a PR unless `CURSOR_AUTO_PR=false`.
+- `cursor:ship` runs `npm run verify` first, then starts the cloud PR workflow.
+
+GitHub Actions includes a standard CI workflow plus a manual **Cursor Automation** workflow. Add the `CURSOR_API_KEY` repository secret before using the manual workflow.
+
 ## Source Pulls
 
 Use **Pull Live Sources** in the UI, or call:
