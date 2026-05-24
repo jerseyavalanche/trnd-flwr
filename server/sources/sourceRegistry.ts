@@ -71,7 +71,7 @@ const publicSource = (adapter: SourceAdapter): SourceMeta => ({
   category: adapter.category,
   url: adapter.url,
   enabled: adapter.enabledByDefault,
-  status: "connected",
+  status: adapter.enabledByDefault ? "connected" : "disabled",
   connectionType: adapter.connectionType,
   docsUrl: adapter.docsUrl,
   needsApiKey: adapter.requiresApiKey,

@@ -1,3 +1,4 @@
+import { fetchResponse, fetchText } from "../fetchHelpers.js";
 import { truncate, withIngestedAt } from "../normalize.js";
 import type { NormalizedIngestedItem, SourceAdapter } from "../types.js";
 
@@ -11,9 +12,13 @@ const strip = (value: string) =>
     .replace(/\s+/g, " ")
     .trim();
 
+const cleanTicker = (value: string) => value.match(/[A-Z][A-Z0-9.-]{0,9}/)?.[0] ?? "";
+
 const cellsFromRow = (row: string) => [...row.matchAll(/<td[^>]*>([\s\S]*?)<\/td>/gi)].map((match) => strip(match[1] ?? ""));
 
 const firstHref = (row: string) => row.match(/href=["']([^"']+)["']/i)?.[1];
+
+const tickerHref = (row: string) => row.match(/href=["'][^"']*\/screener\?s=([^"']+)["']/i)?.[1];
 
 export const openInsiderAdapter: SourceAdapter = {
   id: "openinsider",
@@ -26,24 +31,24 @@ export const openInsiderAdapter: SourceAdapter = {
   connectionType: "scrape_possible",
   docsUrl: "http://openinsider.com/",
   async healthCheck() {
-    const response = await fetch(OPEN_INSIDER_URL);
+    const response = await fetchResponse(OPEN_INSIDER_URL);
     return response.ok
       ? { ok: true, status: "connected" }
       : { ok: false, status: "error", message: `HTTP ${response.status}` };
   },
   async fetchLatest(): Promise<NormalizedIngestedItem[]> {
-    const response = await fetch(OPEN_INSIDER_URL);
-    if (!response.ok) throw new Error(`OpenInsider request failed: HTTP ${response.status}`);
-    const html = await response.text();
+    const html = await fetchText(OPEN_INSIDER_URL).catch((error: unknown) => {
+      throw new Error(`OpenInsider request failed: ${error instanceof Error ? error.message : String(error)}`);
+    });
     const rows = [...html.matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi)].map((match) => match[1] ?? "");
 
     return rows
-      .map((row) => ({ row, cells: cellsFromRow(row), href: firstHref(row) }))
+      .map((row) => ({ row, cells: cellsFromRow(row), href: firstHref(row), tickerFromHref: tickerHref(row) }))
       .filter(({ cells }) => cells.length >= 10)
       .slice(0, 50)
-      .map(({ row, cells, href }) => {
+      .map(({ row, cells, href, tickerFromHref }) => {
         const tradeDate = cells[1];
-        const ticker = cells[3];
+        const ticker = cleanTicker(tickerFromHref ? decodeURIComponent(tickerFromHref) : cells[3]);
         const company = cells[4];
         const insider = cells[5];
         const title = cells[6];

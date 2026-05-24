@@ -1,3 +1,4 @@
+import { fetchJson, fetchResponse } from "../fetchHelpers.js";
 import { domainFromUrl, withIngestedAt } from "../normalize.js";
 import type { NormalizedIngestedItem, SourceAdapter } from "../types.js";
 
@@ -15,11 +16,10 @@ type HnItem = {
 const HN_BASE = "https://hacker-news.firebaseio.com/v0";
 const HN_ITEM_URL = (id: number) => `https://news.ycombinator.com/item?id=${id}`;
 
-const fetchJson = async <T>(url: string): Promise<T> => {
-  const response = await fetch(url);
-  if (!response.ok) throw new Error(`HN request failed: HTTP ${response.status}`);
-  return (await response.json()) as T;
-};
+const fetchHnJson = async <T>(url: string): Promise<T> =>
+  fetchJson<T>(url).catch((error: unknown) => {
+    throw new Error(`HN request failed: ${error instanceof Error ? error.message : String(error)}`);
+  });
 
 export const hackerNewsAdapter: SourceAdapter = {
   id: "hacker_news",
@@ -32,19 +32,19 @@ export const hackerNewsAdapter: SourceAdapter = {
   connectionType: "public_api",
   docsUrl: "https://github.com/HackerNews/API",
   async healthCheck() {
-    const response = await fetch(`${HN_BASE}/topstories.json`);
+    const response = await fetchResponse(`${HN_BASE}/topstories.json`);
     return response.ok
       ? { ok: true, status: "connected" }
       : { ok: false, status: "error", message: `HTTP ${response.status}` };
   },
   async fetchLatest(): Promise<NormalizedIngestedItem[]> {
     const storyIdGroups = await Promise.all([
-      fetchJson<number[]>(`${HN_BASE}/topstories.json`),
-      fetchJson<number[]>(`${HN_BASE}/newstories.json`),
-      fetchJson<number[]>(`${HN_BASE}/beststories.json`),
+      fetchHnJson<number[]>(`${HN_BASE}/topstories.json`),
+      fetchHnJson<number[]>(`${HN_BASE}/newstories.json`),
+      fetchHnJson<number[]>(`${HN_BASE}/beststories.json`),
     ]);
     const ids = Array.from(new Set(storyIdGroups.flatMap((group) => group.slice(0, 25)))).slice(0, 60);
-    const items = await Promise.all(ids.map((id) => fetchJson<HnItem | null>(`${HN_BASE}/item/${id}.json`)));
+    const items = await Promise.all(ids.map((id) => fetchHnJson<HnItem | null>(`${HN_BASE}/item/${id}.json`)));
 
     return items
       .filter((item): item is HnItem => Boolean(item?.title) && item?.type === "story")

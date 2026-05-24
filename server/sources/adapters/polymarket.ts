@@ -1,3 +1,4 @@
+import { fetchJson, fetchResponse } from "../fetchHelpers.js";
 import { capRaw, truncate, withIngestedAt } from "../normalize.js";
 import type { NormalizedIngestedItem, SourceAdapter } from "../types.js";
 
@@ -56,15 +57,15 @@ export const polymarketAdapter: SourceAdapter = {
   connectionType: "public_api",
   docsUrl: "https://docs.polymarket.com/",
   async healthCheck() {
-    const response = await fetch(POLYMARKET_URL);
+    const response = await fetchResponse(POLYMARKET_URL);
     return response.ok
       ? { ok: true, status: "connected" }
       : { ok: false, status: response.status === 429 ? "rate_limited" : "error", message: `HTTP ${response.status}` };
   },
   async fetchLatest(): Promise<NormalizedIngestedItem[]> {
-    const response = await fetch(POLYMARKET_URL);
-    if (!response.ok) throw new Error(`Polymarket request failed: HTTP ${response.status}`);
-    const payload = (await response.json()) as PolymarketEvent[];
+    const payload = await fetchJson<PolymarketEvent[]>(POLYMARKET_URL).catch((error: unknown) => {
+      throw new Error(`Polymarket request failed: ${error instanceof Error ? error.message : String(error)}`);
+    });
 
     return payload
       .slice(0, 12)

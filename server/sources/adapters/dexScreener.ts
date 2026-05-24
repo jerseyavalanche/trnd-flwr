@@ -1,3 +1,4 @@
+import { fetchJson, fetchResponse } from "../fetchHelpers.js";
 import { truncate, withIngestedAt } from "../normalize.js";
 import type { NormalizedIngestedItem, SourceAdapter } from "../types.js";
 
@@ -30,7 +31,7 @@ export const dexScreenerAdapter: SourceAdapter = {
   connectionType: "public_api",
   docsUrl: "https://docs.dexscreener.com/api/reference",
   async healthCheck() {
-    const response = await fetch(endpoints[0].url);
+    const response = await fetchResponse(endpoints[0].url);
     return response.ok
       ? { ok: true, status: "connected" }
       : { ok: false, status: response.status === 429 ? "rate_limited" : "error", message: `HTTP ${response.status}` };
@@ -38,9 +39,10 @@ export const dexScreenerAdapter: SourceAdapter = {
   async fetchLatest(): Promise<NormalizedIngestedItem[]> {
     const payloads = await Promise.all(
       endpoints.map(async (endpoint) => {
-        const response = await fetch(endpoint.url);
-        if (!response.ok) throw new Error(`DexScreener ${endpoint.label} request failed: HTTP ${response.status}`);
-        return { label: endpoint.label, payload: (await response.json()) as DexProfile[] };
+        const payload = await fetchJson<DexProfile[]>(endpoint.url).catch((error: unknown) => {
+          throw new Error(`DexScreener ${endpoint.label} request failed: ${error instanceof Error ? error.message : String(error)}`);
+        });
+        return { label: endpoint.label, payload };
       }),
     );
     const seen = new Set<string>();
