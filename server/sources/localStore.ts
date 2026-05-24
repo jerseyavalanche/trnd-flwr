@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { getDedupeKey } from "./dedupe.js";
 import { DEFAULT_SIGNAL_PAGE_SIZE } from "./feedLimits.js";
@@ -20,6 +20,7 @@ type LocalStore = {
 };
 
 const storePath = resolve(process.cwd(), process.env.TRND_FLWR_LOCAL_STORE_PATH ?? ".trnd_flwr/local-store.json");
+let mutationQueue: Promise<unknown> = Promise.resolve();
 
 const baseSourceStatus = (source: (typeof sourceRegistry)[number]): SourceStatus => ({
   ...source,
@@ -57,7 +58,21 @@ const readStore = async (): Promise<LocalStore> => {
 
 const writeStore = async (store: LocalStore) => {
   await mkdir(dirname(storePath), { recursive: true });
-  await writeFile(storePath, JSON.stringify(store));
+  const tempPath = `${storePath}.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2)}.tmp`;
+  await writeFile(tempPath, JSON.stringify(store));
+  await rename(tempPath, storePath);
+};
+
+const mutateStore = async <T>(mutation: (store: LocalStore) => T | Promise<T>) => {
+  const run = async () => {
+    const store = await readStore();
+    const result = await mutation(store);
+    await writeStore(store);
+    return result;
+  };
+  const next = mutationQueue.then(run, run);
+  mutationQueue = next.catch(() => undefined);
+  return next;
 };
 
 const byIngestedDesc = (a: Record<string, unknown>, b: Record<string, unknown>) =>
@@ -99,67 +114,67 @@ export const getLocalSourceStatuses = async () => {
 };
 
 export const upsertLocalSourceStatus = async (status: SourceStatus) => {
-  const store = await readStore();
-  store.sources[status.id] = {
-    ...status,
-    totalItemCount: Object.values(store.items).filter((item) => item.source === status.name || item.sourceId === status.id).length,
-  };
-  await writeStore(store);
+  await mutateStore((store) => {
+    store.sources[status.id] = {
+      ...status,
+      totalItemCount: Object.values(store.items).filter((item) => item.source === status.name || item.sourceId === status.id).length,
+    };
+  });
 };
 
 export const saveLocalItems = async (items: NormalizedIngestedItem[]) => {
-  const store = await readStore();
-  let inserted = 0;
-  let updated = 0;
+  return mutateStore((store) => {
+    let inserted = 0;
+    let updated = 0;
 
-  for (const item of items) {
-    const id = getDedupeKey(item);
-    const existing = store.items[id];
-    const payload = {
-      id,
-      source: item.source,
-      sourceId: item.sourceId,
-      sourceCategory: item.sourceCategory,
-      sourceStatus: item.sourceStatus,
-      externalId: item.externalId ?? null,
-      title: item.title,
-      summary: item.summary ?? null,
-      url: item.url ?? null,
-      imageUrl: item.imageUrl ?? null,
-      symbol: item.symbol ?? null,
-      assetClass: item.assetClass ?? "unknown",
-      signalType: item.signalType,
-      direction: item.direction ?? "unknown",
-      confidence: item.confidence ?? null,
-      importance: item.importance ?? "low",
-      publishedAt: item.publishedAt ?? null,
-      rawJson: capRaw(item.raw),
-    };
+    for (const item of items) {
+      const id = getDedupeKey(item);
+      const existing = store.items[id];
+      const payload = {
+        id,
+        source: item.source,
+        sourceId: item.sourceId,
+        sourceCategory: item.sourceCategory,
+        sourceStatus: item.sourceStatus,
+        externalId: item.externalId ?? null,
+        title: item.title,
+        summary: item.summary ?? null,
+        url: item.url ?? null,
+        imageUrl: item.imageUrl ?? null,
+        symbol: item.symbol ?? null,
+        assetClass: item.assetClass ?? "unknown",
+        signalType: item.signalType,
+        direction: item.direction ?? "unknown",
+        confidence: item.confidence ?? null,
+        importance: item.importance ?? "low",
+        publishedAt: item.publishedAt ?? null,
+        rawJson: capRaw(item.raw),
+      };
 
-    if (existing) {
-      store.items[id] = {
-        ...existing,
-        ...payload,
-        id,
-        ingestedAt: existing.ingestedAt,
-        lastSeenAt: item.ingestedAt,
-        seenCount: existing.seenCount + 1,
-      };
-      updated += 1;
-    } else {
-      store.items[id] = {
-        ...payload,
-        id,
-        ingestedAt: item.ingestedAt,
-        lastSeenAt: item.ingestedAt,
-        seenCount: 1,
-      };
-      inserted += 1;
+      if (existing) {
+        store.items[id] = {
+          ...existing,
+          ...payload,
+          id,
+          ingestedAt: existing.ingestedAt,
+          lastSeenAt: item.ingestedAt,
+          seenCount: existing.seenCount + 1,
+        };
+        updated += 1;
+      } else {
+        store.items[id] = {
+          ...payload,
+          id,
+          ingestedAt: item.ingestedAt,
+          lastSeenAt: item.ingestedAt,
+          seenCount: 1,
+        };
+        inserted += 1;
+      }
     }
-  }
 
-  await writeStore(store);
-  return { inserted, updated };
+    return { inserted, updated };
+  });
 };
 
 export const getLocalSignals = async (params: {
@@ -203,8 +218,8 @@ export const getLocalSignals = async (params: {
 };
 
 export const recordLocalIngestRun = async (summary: IngestRunSummary, startedAt: string, finishedAt: string) => {
-  const store = await readStore();
-  store.ingestRuns.unshift({ ...summary, startedAt, finishedAt });
-  store.ingestRuns = store.ingestRuns.slice(0, 50);
-  await writeStore(store);
+  await mutateStore((store) => {
+    store.ingestRuns.unshift({ ...summary, startedAt, finishedAt });
+    store.ingestRuns = store.ingestRuns.slice(0, 50);
+  });
 };

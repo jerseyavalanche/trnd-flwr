@@ -1,4 +1,5 @@
 import Parser from "rss-parser";
+import { withTimeout } from "../fetchHelpers.js";
 import { domainFromUrl, truncate, withIngestedAt } from "../normalize.js";
 import type { NormalizedIngestedItem, SourceAdapter } from "../types.js";
 
@@ -57,7 +58,12 @@ export const rssFeedsAdapter: SourceAdapter = {
   async fetchLatest(): Promise<NormalizedIngestedItem[]> {
     const configuredFeeds = feeds();
     if (configuredFeeds.length === 0) return [];
-    const parsedFeeds = await Promise.all(configuredFeeds.map(async (feedUrl) => ({ feedUrl, feed: await parser.parseURL(feedUrl) })));
+    const parsedFeeds = await Promise.all(
+      configuredFeeds.map(async (feedUrl) => ({
+        feedUrl,
+        feed: await withTimeout(parser.parseURL(feedUrl), 8_000, `Timed out fetching RSS feed ${feedUrl}`),
+      })),
+    );
 
     return parsedFeeds.flatMap(({ feedUrl, feed }) =>
       (feed.items ?? [])

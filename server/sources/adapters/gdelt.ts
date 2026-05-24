@@ -1,3 +1,4 @@
+import { fetchJson, fetchResponse } from "../fetchHelpers.js";
 import { truncate, withIngestedAt } from "../normalize.js";
 import type { NormalizedIngestedItem, SourceAdapter } from "../types.js";
 
@@ -42,7 +43,7 @@ export const gdeltAdapter: SourceAdapter = {
   connectionType: "public_api",
   docsUrl: "https://www.gdeltproject.org/",
   async healthCheck() {
-    const response = await fetch(gdeltUrl(queryBuckets[0].query));
+    const response = await fetchResponse(gdeltUrl(queryBuckets[0].query));
     return response.ok
       ? { ok: true, status: "connected" }
       : { ok: false, status: "error", message: `HTTP ${response.status}` };
@@ -50,9 +51,10 @@ export const gdeltAdapter: SourceAdapter = {
   async fetchLatest(): Promise<NormalizedIngestedItem[]> {
     const results = await Promise.allSettled(
       queryBuckets.map(async (bucket) => {
-        const response = await fetch(gdeltUrl(bucket.query));
-        if (!response.ok) throw new Error(`GDELT ${bucket.label} request failed: HTTP ${response.status}`);
-        return { bucket: bucket.label, payload: (await response.json()) as GdeltResponse };
+        const payload = await fetchJson<GdeltResponse>(gdeltUrl(bucket.query)).catch((error: unknown) => {
+          throw new Error(`GDELT ${bucket.label} request failed: ${error instanceof Error ? error.message : String(error)}`);
+        });
+        return { bucket: bucket.label, payload };
       }),
     );
     const responses = results.flatMap((result) => (result.status === "fulfilled" ? [result.value] : []));

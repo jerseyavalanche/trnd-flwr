@@ -31,7 +31,7 @@ const statusFromAdapter = (adapter: SourceAdapter, status: SourceStatus["status"
   name: adapter.name,
   category: adapter.category,
   url: adapter.url,
-  enabled: adapter.enabledByDefault,
+  enabled: adapter.enabledByDefault && status !== "disabled",
   status,
   connectionType: adapter.connectionType,
   docsUrl: adapter.docsUrl,
@@ -55,6 +55,8 @@ const statusFromMeta = (source: (typeof sourceRegistry)[number], status: SourceS
 });
 
 const hasRequiredEnvVars = (envVars?: string[]) => (envVars ?? []).every((envVar) => Boolean(process.env[envVar]));
+
+const isFailureStatus = (status: SourceStatus["status"]) => status === "error" || status === "rate_limited";
 
 const errorsBySource = (errors: IngestRunSummary["errors"]) =>
   Object.fromEntries(errors.map((error) => [error.source, error.message]));
@@ -314,6 +316,17 @@ export const runIngest = async (sourceId?: string): Promise<IngestRunSummary> =>
       }
       if (adapter.platformLimited) {
         await upsertSourceStatusWithFallback(statusFromAdapter(adapter, "platform_limited", "Platform-limited source is not configured."));
+        continue;
+      }
+
+      const health = await adapter.healthCheck();
+      if (!health.ok) {
+        const message = health.message ?? `Source health check reported ${health.status}.`;
+        await upsertSourceStatusWithFallback(statusFromAdapter(adapter, health.status, message));
+        if (isFailureStatus(health.status)) {
+          sourcesFailed += 1;
+          errors.push({ source: adapter.name, message, retrySafe: true, credentialsMissing: false });
+        }
         continue;
       }
 

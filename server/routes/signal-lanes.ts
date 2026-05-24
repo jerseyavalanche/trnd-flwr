@@ -1,4 +1,5 @@
 import { Router } from "express";
+import type { RequestHandler } from "express";
 import { FieldValue } from "firebase-admin/firestore";
 import { computeDedupeKey } from "../connectors.js";
 import { runFirestoreQuery } from "../firestoreAccess.js";
@@ -20,6 +21,60 @@ import {
 const router = Router();
 
 let sourceOnlyRecords: PersistedSignalRecord[] = [];
+
+const ingestRateWindowMs = Number(process.env.TRND_FLWR_INGEST_RATE_WINDOW_MS ?? 15 * 60 * 1000);
+const ingestRateLimit = Number(process.env.TRND_FLWR_INGEST_RATE_LIMIT ?? 10);
+const ingestAttempts = new Map<string, { count: number; resetAt: number }>();
+
+const ingestApiKey = () => process.env.TRND_FLWR_INGEST_API_KEY?.trim();
+
+const requestApiKey = (authorization?: string | string[], headerApiKey?: string | string[]) => {
+  const explicitKey = Array.isArray(headerApiKey) ? headerApiKey[0] : headerApiKey;
+  if (explicitKey) return explicitKey;
+  const authorizationValue = Array.isArray(authorization) ? authorization[0] : authorization;
+  const bearer = authorizationValue?.match(/^Bearer\s+(.+)$/i)?.[1];
+  return bearer?.trim();
+};
+
+const isLocalRequest = (ip?: string) => {
+  if (!ip) return false;
+  return ip === "::1" || ip === "127.0.0.1" || ip.startsWith("127.") || ip.startsWith("::ffff:127.");
+};
+
+const requireIngestAccess: RequestHandler = (req, res, next) => {
+  const now = Date.now();
+  const key = req.ip ?? "unknown";
+  const current = ingestAttempts.get(key);
+  const attempt = current && current.resetAt > now ? current : { count: 0, resetAt: now + ingestRateWindowMs };
+  attempt.count += 1;
+  ingestAttempts.set(key, attempt);
+
+  if (attempt.count > ingestRateLimit) {
+    res.status(429).json({ status: "rate_limited", message: "Too many ingest requests. Try again later." });
+    return;
+  }
+
+  const expectedKey = ingestApiKey();
+  if (expectedKey) {
+    const providedKey = requestApiKey(req.get("authorization"), req.get("x-api-key"));
+    if (providedKey === expectedKey) {
+      next();
+      return;
+    }
+    res.status(401).json({ status: "unauthorized", message: "A valid ingest API key is required." });
+    return;
+  }
+
+  if (process.env.NODE_ENV !== "production" && isLocalRequest(req.ip)) {
+    next();
+    return;
+  }
+
+  res.status(503).json({
+    status: "not_configured",
+    message: "Set TRND_FLWR_INGEST_API_KEY before enabling remote ingest runs.",
+  });
+};
 
 const slugify = (value: string) =>
   value
@@ -394,12 +449,13 @@ router.get("/signals/sources", (_req, res) => {
   });
 });
 
-router.post("/ingest/run", async (_req, res) => {
+router.post("/ingest/run", requireIngestAccess, async (_req, res) => {
   res.json(await runIngest());
 });
 
-router.post("/ingest/source/:sourceId", async (req, res) => {
-  res.json(await runIngest(req.params.sourceId));
+router.post("/ingest/source/:sourceId", requireIngestAccess, async (req, res) => {
+  const sourceId = Array.isArray(req.params.sourceId) ? req.params.sourceId[0] : req.params.sourceId;
+  res.json(await runIngest(sourceId));
 });
 
 const pullConfiguredSources = async () => {

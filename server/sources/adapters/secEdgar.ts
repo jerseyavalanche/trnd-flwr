@@ -1,3 +1,4 @@
+import { fetchJson } from "../fetchHelpers.js";
 import { truncate, withIngestedAt } from "../normalize.js";
 import type { NormalizedIngestedItem, SourceAdapter } from "../types.js";
 
@@ -31,15 +32,14 @@ const watchlist = [
 ];
 
 const fetchSubmission = async (cik: string) => {
-  const response = await fetch(`https://data.sec.gov/submissions/CIK${cik}.json`, {
+  return fetchJson<SecSubmissions>(`https://data.sec.gov/submissions/CIK${cik}.json`, {
     headers: {
       "User-Agent": USER_AGENT,
-      Accept: "application/json",
       "Accept-Encoding": "gzip, deflate",
     },
+  }).catch((error: unknown) => {
+    throw new Error(`SEC submissions request failed for ${cik}: ${error instanceof Error ? error.message : String(error)}`);
   });
-  if (!response.ok) throw new Error(`SEC submissions request failed for ${cik}: HTTP ${response.status}`);
-  return (await response.json()) as SecSubmissions;
 };
 
 const filingUrl = (cik: string, accessionNumber: string, primaryDocument: string) => {

@@ -13,7 +13,7 @@ export const withTimeout = async <T>(operation: Promise<T>, ms: number, message 
   }
 };
 
-export const fetchText = async (url: string, options: RequestInit = {}, timeoutMs = 8_000) =>
+export const fetchResponse = async (url: string, options: RequestInit = {}, timeoutMs = 8_000) =>
   withTimeout(
     fetch(url, {
       ...options,
@@ -21,7 +21,14 @@ export const fetchText = async (url: string, options: RequestInit = {}, timeoutM
         "User-Agent": "TRND_FLWR/0.1",
         ...(options.headers ?? {}),
       },
-    }).then(async (response) => {
+    }),
+    timeoutMs,
+    `Timed out fetching ${url}`,
+  );
+
+export const fetchText = async (url: string, options: RequestInit = {}, timeoutMs = 8_000) =>
+  withTimeout(
+    fetchResponse(url, options, timeoutMs).then(async (response) => {
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       return response.text();
     }),
@@ -31,14 +38,17 @@ export const fetchText = async (url: string, options: RequestInit = {}, timeoutM
 
 export const fetchJson = async <T>(url: string, options: RequestInit = {}, timeoutMs = 8_000) =>
   withTimeout(
-    fetch(url, {
-      ...options,
-      headers: {
-        "User-Agent": "TRND_FLWR/0.1",
-        Accept: "application/json",
-        ...(options.headers ?? {}),
+    fetchResponse(
+      url,
+      {
+        ...options,
+        headers: {
+          Accept: "application/json",
+          ...(options.headers ?? {}),
+        },
       },
-    }).then(async (response) => {
+      timeoutMs,
+    ).then(async (response) => {
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       return (await response.json()) as T;
     }),

@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "hooks": {
+    "beforeShellExecution": [
+      {
+        "command": "node .cursor/hooks/guard-shell.mjs",
+        "matcher": "git\\s+(reset\\s+--hard|clean\\s+-|push\\s+--force|checkout\\s+--|restore\\s+)",
+        "failClosed": false
+      }
+    ]
+  }
+}

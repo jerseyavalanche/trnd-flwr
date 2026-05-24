@@ -1,3 +1,4 @@
+import { fetchJson } from "../fetchHelpers.js";
 import { domainFromUrl, truncate, withIngestedAt } from "../normalize.js";
 import type { NormalizedIngestedItem, SourceAdapter } from "../types.js";
 
@@ -28,40 +29,28 @@ const subreddits = (process.env.TRND_FLWR_REDDIT_SUBREDDITS ?? "technology,stock
   .map((value) => value.trim())
   .filter(Boolean);
 
-const fetchJson = async <T>(url: string) => {
-  const response = await fetch(url, {
-    headers: {
-      "User-Agent": "TRND_FLWR/0.1 public-source-reader",
-      Accept: "application/json",
-    },
-  });
-  if (!response.ok) throw new Error(`Reddit request failed: HTTP ${response.status}`);
-  return (await response.json()) as T;
-};
-
 export const redditAdapter: SourceAdapter = {
   id: "reddit",
   name: "Reddit",
   category: "social",
   url: "https://www.reddit.com/",
-  enabledByDefault: true,
+  enabledByDefault: false,
   requiresApiKey: false,
   paidRequired: false,
   connectionType: "public_api",
   docsUrl: "https://www.reddit.com/dev/api/",
   async healthCheck() {
-    const response = await fetch(`https://www.reddit.com/r/${subreddits[0]}/hot.json?limit=1`, {
-      headers: { "User-Agent": "TRND_FLWR/0.1 public-source-reader" },
-    });
-    return response.ok
-      ? { ok: true, status: "connected" }
-      : { ok: false, status: response.status === 429 ? "rate_limited" : "error", message: `HTTP ${response.status}` };
+    return { ok: false, status: "disabled", message: "Reddit public JSON is disabled by default because unauthenticated requests are routinely rejected." };
   },
   async fetchLatest(): Promise<NormalizedIngestedItem[]> {
     const responses = await Promise.all(
       subreddits.map(async (subreddit) => ({
         subreddit,
-        payload: await fetchJson<RedditResponse>(`https://www.reddit.com/r/${subreddit}/hot.json?limit=20`),
+        payload: await fetchJson<RedditResponse>(`https://www.reddit.com/r/${subreddit}/hot.json?limit=20`, {
+          headers: { "User-Agent": "TRND_FLWR/0.1 public-source-reader" },
+        }).catch((error: unknown) => {
+          throw new Error(`Reddit request failed: ${error instanceof Error ? error.message : String(error)}`);
+        }),
       })),
     );
 
