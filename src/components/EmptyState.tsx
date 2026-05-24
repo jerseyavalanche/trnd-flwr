@@ -4,8 +4,8 @@ type EmptyStateProps = {
 }
 
 export function EmptyState({
-  title = 'No signals match the current filters.',
-  message = 'Try clearing search, source, group, category, or trust tier filters.',
+  title = 'No real signals have been ingested yet.',
+  message = 'Connect sources or click Ingest New Signals. No fake headlines, whale moves, or trader profiles are shown.',
 }: EmptyStateProps) {
   return (
     <div className="terminal-panel p-6 text-center">

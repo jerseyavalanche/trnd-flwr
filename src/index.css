@@ -2,7 +2,7 @@
 @import 'tailwindcss';
 
 @theme {
-  --color-app-bg: #0b0d10;
+  --color-app-bg: #050b0d;
   --color-surface: #101318;
   --color-surface-2: #161b22;
   --color-grid-border: #2a3140;
@@ -20,7 +20,7 @@
 
 :root {
   color-scheme: dark;
-  background: #0b0d10;
+  background: #050b0d;
   color: #e8eaed;
   font-family: 'JetBrains Mono', ui-monospace, monospace;
   font-size: 13px;
@@ -38,7 +38,7 @@ body,
 #root {
   min-height: 100vh;
   margin: 0;
-  background: #0b0d10;
+  background: #050b0d;
 }
 
 button,
@@ -60,6 +60,34 @@ button {
 
 .ticker {
   font-variant-numeric: tabular-nums;
+}
+
+.ticker-marquee-mask {
+  mask-image: linear-gradient(to right, transparent, black 5%, black 95%, transparent);
+}
+
+.ticker-marquee {
+  animation: ticker-scroll 38s linear infinite;
+}
+
+.ticker-marquee:hover {
+  animation-play-state: paused;
+}
+
+@keyframes ticker-scroll {
+  from {
+    transform: translateX(0);
+  }
+
+  to {
+    transform: translateX(-33.333%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ticker-marquee {
+    animation: none;
+  }
 }
 
 .feed-scroll {

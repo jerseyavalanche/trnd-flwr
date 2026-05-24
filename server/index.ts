@@ -5,6 +5,7 @@ import dotenv from "dotenv";
 import signalLanesRouter from "./routes/signal-lanes.js";
 import { getConfiguredSignalConnectors } from "./sourceConnectors.js";
 import { getRegistryStatus } from "./realSourceRegistry.js";
+import { getMarketQuotes } from "./marketQuotes.js";
 
 dotenv.config();
 
@@ -58,6 +59,14 @@ app.get("/api/metrics", (_req, res) => {
     uptime: process.uptime(),
     memory: process.memoryUsage(),
   });
+});
+
+app.get("/api/market/quotes", async (_req, res, next) => {
+  try {
+    res.json(await getMarketQuotes());
+  } catch (error) {
+    next(error);
+  }
 });
 
 app.get("/api/stream", (_req, res) => {

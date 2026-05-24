@@ -39,7 +39,72 @@ export type UiSourceCategory =
   | 'cyber'
   | 'local'
   | 'cultural'
-  | 'economic';
+  | 'economic'
+  | 'crypto'
+  | 'options'
+  | 'institutional'
+  | 'insider'
+  | 'copytrader'
+  | 'other';
+
+export type NormalizedSourceCategory =
+  | "crypto"
+  | "options"
+  | "market"
+  | "institutional"
+  | "news"
+  | "social"
+  | "prediction"
+  | "copytrader";
+
+export type NormalizedSourceStatus =
+  | "connected"
+  | "needs_api_key"
+  | "needs_oauth"
+  | "paid_required"
+  | "disabled"
+  | "rate_limited"
+  | "error"
+  | "unavailable";
+
+export type SignalAssetClass = "stock" | "crypto" | "forex" | "option" | "event" | "unknown";
+
+export type SignalType =
+  | "news"
+  | "whale_move"
+  | "options_flow"
+  | "insider_trade"
+  | "institutional_filing"
+  | "social_attention"
+  | "prediction_market"
+  | "price_move"
+  | "dex_activity"
+  | "trader_profile"
+  | "source_status";
+
+export type SignalDirection = "bullish" | "bearish" | "neutral" | "unknown";
+
+export type SignalImportance = "low" | "medium" | "high" | "urgent";
+
+export type SourceFeed = {
+  url: string;
+  sourceType: "rss" | "unknown";
+  configuredFrom: "TRND_FLWR_RSS_FEEDS" | "NEWS_RSS_FEEDS";
+};
+
+export type IngestedItem = {
+  id: string;
+  title: string;
+  url: string;
+  sourceDomain: string;
+  sourceName?: string;
+  publishedAt?: string;
+  category?: string;
+  summary?: string;
+  imageUrl?: string;
+  rawExcerpt?: string;
+  pulledAt: string;
+};
 
 export type UiTrustTier = 1 | 2 | 3 | 4;
 
@@ -60,6 +125,8 @@ export interface SignalItem {
   author?: string;
   publishedAt: string;
   ingestedAt: string;
+  lastSeenAt?: string | null;
+  seenCount?: number | null;
   tags: string[];
   rawType: string;
   isPrediction: boolean;
@@ -71,6 +138,9 @@ export interface SignalItem {
   assetClass?: string | null;
   direction?: string | null;
   confidence?: number | null;
+  externalId?: string | null;
+  signalType?: SignalType | null;
+  importance?: SignalImportance | null;
   sourceUrl?: string | null;
   dedupeKey?: string;
   rawPayloadRef?: string | null;
@@ -84,11 +154,21 @@ export interface PersistedSignalRecord {
   direction: string | null;
   confidence: number | null;
   source: string;
+  sourceCategory?: NormalizedSourceCategory | null;
+  sourceStatus?: NormalizedSourceStatus | null;
   sourceUrl: string | null;
+  sourceDomain?: string | null;
+  externalId?: string | null;
   title: string;
   summary: string | null;
+  imageUrl?: string | null;
+  signalType?: SignalType | null;
+  importance?: SignalImportance | null;
+  rawJson?: unknown;
   publishedAt: string | null;
   ingestedAt: string;
+  lastSeenAt: string;
+  seenCount: number;
   dedupeKey: string;
   rawPayloadRef?: string | null;
   rawPayloadSummary?: string | null;
@@ -100,10 +180,19 @@ export interface IncomingSignalRecord {
   direction?: string | null;
   confidence?: number | null;
   source: string;
+  sourceCategory?: NormalizedSourceCategory | null;
+  sourceStatus?: NormalizedSourceStatus | null;
   sourceUrl?: string | null;
+  sourceDomain?: string | null;
+  externalId?: string | null;
   title: string;
   summary?: string | null;
+  imageUrl?: string | null;
+  signalType?: SignalType | null;
+  importance?: SignalImportance | null;
   publishedAt?: string | null;
+  category?: UiSourceCategory | null;
+  rawJson?: unknown;
   rawPayloadRef?: string | null;
   rawPayloadSummary?: string | null;
 }
@@ -115,18 +204,10 @@ export interface IngestError {
 
 export interface IngestResult {
   addedCount: number;
+  updatedCount: number;
   skippedDuplicateCount: number;
   records: PersistedSignalRecord[];
   errors: IngestError[];
-}
-
-export interface TrendInsightRecord {
-  signalIds: string[];
-  generatedText: string;
-  createdAt: string;
-  sourceCount: number;
-  symbols: string[];
-  userAction: "copyable_trend_insight";
 }
 
 export type SourceCategory = 'official' | 'market' | 'tech_ai' | 'news_narrative' | 'social_culture' | 'prediction';
@@ -157,6 +238,7 @@ export interface UiSourceStatus {
   trustTier: UiTrustTier;
   status: UiSourceConnectionStatus;
   count24h: number;
+  lastAttemptAt?: string;
   lastSuccessAt?: string;
   lastErrorAt?: string;
   lastError?: string;

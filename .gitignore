@@ -16,6 +16,7 @@ dist-server
 .env
 .env.*
 !.env.example
+.trnd_flwr/
 *service-account*.json
 *firebase-adminsdk*.json
 

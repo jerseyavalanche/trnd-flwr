@@ -21,6 +21,12 @@ export type SourceCategory =
   | 'local'
   | 'cultural'
   | 'economic'
+  | 'crypto'
+  | 'options'
+  | 'institutional'
+  | 'insider'
+  | 'copytrader'
+  | 'other'
 
 export type TrustTier = 1 | 2 | 3 | 4
 
@@ -34,6 +40,7 @@ export type SourceStatus = {
   trustTier: TrustTier
   status: SourceConnectionStatus
   count24h: number
+  lastAttemptAt?: string
   lastSuccessAt?: string
   lastErrorAt?: string
   lastError?: string
@@ -65,4 +72,6 @@ export const sourceCategories: SourceCategory[] = [
   'prediction',
   'cyber',
   'local',
+  'crypto',
+  'other',
 ]

@@ -1,11 +1,12 @@
 import { ApiRequestError, readResponseBody } from './http'
 import type {
   IngestResponse,
+  MarketQuotesResponse,
   SignalsResponse,
   SourceHealthResponse,
   SourceRegistryResponse,
 } from '../types/api'
-import type { IngestResult, SignalItem, TrendInsight } from '../types/signals'
+import type { IngestResult, SignalItem } from '../types/signals'
 import type { SourceStatus } from '../types/sources'
 
 const apiBase =
@@ -39,14 +40,26 @@ const toErrorMessage = (error: unknown, fallback: string) => {
   return fallback
 }
 
-export const fetchSignals = async (): Promise<{
+export const fetchSignals = async (params: { limit?: number; offset?: number; q?: string; category?: string; source?: string; signalType?: string; sort?: string } = {}): Promise<{
   signals: SignalItem[]
   status?: string
   message?: string
   error?: string
+  total?: number
+  offset?: number
+  limit?: number
+  hasMore?: boolean
 }> => {
   try {
-    const payload = await fetchJson<unknown>('/api/signals')
+    const query = new URLSearchParams()
+    if (params.limit !== undefined) query.set('limit', String(params.limit))
+    if (params.offset !== undefined) query.set('offset', String(params.offset))
+    if (params.q) query.set('q', params.q)
+    if (params.category) query.set('category', params.category)
+    if (params.source) query.set('source', params.source)
+    if (params.signalType) query.set('signalType', params.signalType)
+    if (params.sort) query.set('sort', params.sort)
+    const payload = await fetchJson<unknown>(`/api/signals${query.size > 0 ? `?${query.toString()}` : ''}`)
 
     if (isSignalsEnvelope(payload)) {
       return {
@@ -54,6 +67,10 @@ export const fetchSignals = async (): Promise<{
         status: payload.status,
         message: payload.message,
         error: payload.status === 'storage_error' ? payload.message : undefined,
+        total: payload.total,
+        offset: payload.offset,
+        limit: payload.limit,
+        hasMore: payload.hasMore,
       }
     }
 
@@ -76,11 +93,17 @@ export const fetchSourceRegistry = async (): Promise<{
   message?: string
   lastPullAt?: string | null
   healthy?: number
+  failed?: number
   notConfigured?: number
+  configured?: number
+  enabled?: number
+  lastError?: string | null
+  credentialsMode?: SourceRegistryResponse['credentialsMode']
+  credentialsMessage?: string
   error?: string
 }> => {
   try {
-    const payload = await fetchJson<unknown>('/api/sources/registry')
+    const payload = await fetchJson<unknown>('/api/sources/health')
 
     if (isRegistryEnvelope(payload)) {
       return {
@@ -89,7 +112,13 @@ export const fetchSourceRegistry = async (): Promise<{
         message: payload.message,
         lastPullAt: payload.lastPullAt,
         healthy: payload.healthy,
+        failed: payload.failed,
         notConfigured: payload.notConfigured,
+        configured: payload.configured,
+        enabled: payload.enabled,
+        lastError: payload.lastError,
+        credentialsMode: payload.credentialsMode,
+        credentialsMessage: payload.credentialsMessage,
       }
     }
 
@@ -151,16 +180,49 @@ export const fetchSourceHealth = async () => {
   }
 }
 
-export const runIngestion = async (): Promise<IngestResult & { status?: string; message?: string }> => {
+export const fetchMarketQuotes = async (): Promise<MarketQuotesResponse> => {
   try {
-    const payload = await fetchJson<IngestResponse>('/api/ingest', {
+    return await fetchJson<MarketQuotesResponse>('/api/market/quotes')
+  } catch (error) {
+    return {
+      status: 'error',
+      message: toErrorMessage(error, 'Market ticker unavailable'),
+      quotes: [],
+      errors: [{ source: 'api', message: toErrorMessage(error, 'Market ticker unavailable') }],
+      pulledAt: new Date().toISOString(),
+    }
+  }
+}
+
+export const runIngestion = async (): Promise<
+  IngestResult & {
+    status?: string
+    message?: string
+    sourcesAttempted?: number
+    sourcesSucceeded?: number
+    sourcesFailed?: number
+    itemsFetched?: number
+    itemsInserted?: number
+    itemsUpdated?: number
+  }
+> => {
+  try {
+    const payload = await fetchJson<IngestResponse>('/api/ingest/run', {
       method: 'POST',
     })
 
-    return payload
+    return {
+      ...payload,
+      addedCount: payload.addedCount ?? payload.itemsInserted ?? 0,
+      updatedCount: payload.updatedCount ?? payload.itemsUpdated ?? 0,
+      skippedDuplicateCount: payload.skippedDuplicateCount ?? 0,
+      records: payload.records ?? [],
+      errors: payload.errors ?? [],
+    }
   } catch (error) {
     return {
       addedCount: 0,
+      updatedCount: 0,
       skippedDuplicateCount: 0,
       records: [],
       status: 'error',
@@ -175,11 +237,3 @@ export const runIngestion = async (): Promise<IngestResult & { status?: string; 
   }
 }
 
-export const createTrendInsight = async (signalIds: string[]): Promise<TrendInsight> =>
-  fetchJson<TrendInsight>('/api/trend-insights', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ signalIds }),
-  })

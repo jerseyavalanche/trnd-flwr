@@ -6,12 +6,33 @@ export const uiCategoryLabels: Record<Exclude<UiCategory, 'all'>, string> = {
   social: 'SOCIAL',
   economic: 'ECONOMIC',
   market: 'MARKET',
+  options: 'OPTIONS FLOW',
+  institutional: 'INSTITUTIONAL',
+  insider: 'INSIDER',
   tech: 'TECHNOLOGY',
   news: 'NEWS',
   prediction: 'PREDICTION',
+  crypto: 'CRYPTO',
+  copytrader: 'COPY-TRADER',
+  other: 'OTHER',
 }
 
-export const uiCategories: UiCategory[] = ['all', 'cultural', 'social', 'economic', 'market', 'tech', 'news', 'prediction']
+export const uiCategories: UiCategory[] = [
+  'all',
+  'cultural',
+  'social',
+  'economic',
+  'crypto',
+  'options',
+  'market',
+  'institutional',
+  'insider',
+  'tech',
+  'news',
+  'prediction',
+  'copytrader',
+  'other',
+]
 
 export const matchesUiCategory = (signal: SignalItem, category: UiCategory) => {
   if (category === 'all') return true
@@ -28,6 +49,12 @@ export const countUiCategories = (signals: SignalItem[]) => {
     SOCIAL: 0,
     ECONOMIC: 0,
     MARKET: 0,
+    CRYPTO: 0,
+    OPTIONS: 0,
+    INSTITUTIONAL: 0,
+    INSIDER: 0,
+    COPYTRADER: 0,
+    OTHER: 0,
   }
 
   for (const signal of signals) {
@@ -46,5 +73,11 @@ const categoryToCountLabel = (category: SourceCategory): string | null => {
   if (category === 'social') return 'SOCIAL'
   if (category === 'economic') return 'ECONOMIC'
   if (category === 'market') return 'MARKET'
+  if (category === 'crypto') return 'CRYPTO'
+  if (category === 'options') return 'OPTIONS'
+  if (category === 'institutional') return 'INSTITUTIONAL'
+  if (category === 'insider') return 'INSIDER'
+  if (category === 'copytrader') return 'COPYTRADER'
+  if (category === 'other') return 'OTHER'
   return null
 }

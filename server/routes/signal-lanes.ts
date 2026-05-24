@@ -4,17 +4,22 @@ import { computeDedupeKey } from "../connectors.js";
 import { runFirestoreQuery } from "../firestoreAccess.js";
 import { getConfiguredSignalConnectors } from "../sourceConnectors.js";
 import { getEnabledRealSources, getRegistryStatus } from "../realSourceRegistry.js";
+import { getSourceHealthSummary, getSourceStatuses, getStoredSignals, runIngest } from "../sources/runIngest.js";
+import type { SourceStatus as EngineSourceStatus } from "../sources/types.js";
 import {
   IncomingSignalRecord,
   IngestError,
   IngestResult,
   PersistedSignalRecord,
   SignalItem,
-  TrendInsightRecord,
+  SignalImportance,
+  SignalType,
   UiSourceStatus,
 } from "../types.js";
 
 const router = Router();
+
+let sourceOnlyRecords: PersistedSignalRecord[] = [];
 
 const slugify = (value: string) =>
   value
@@ -32,6 +37,105 @@ const toDomain = (url?: string | null) => {
   }
 };
 
+const toFeedGroup = (category: SignalItem["category"]): SignalItem["group"] => {
+  if (category === "market" || category === "economic" || category === "crypto" || category === "options") return "market_finance";
+  if (category === "institutional" || category === "insider") return "official_reality";
+  if (category === "copytrader") return "social_culture";
+  if (category === "tech" || category === "ai") return "tech_ai";
+  if (category === "social" || category === "cultural") return "social_culture";
+  if (category === "prediction") return "prediction";
+  return "news_narrative";
+};
+
+const toUiCategory = (category: string | undefined): SignalItem["category"] => {
+  if (category === "crypto") return "crypto";
+  if (category === "options") return "options";
+  if (category === "market") return "market";
+  if (category === "institutional") return "institutional";
+  if (category === "insider") return "insider";
+  if (category === "news") return "news";
+  if (category === "social") return "social";
+  if (category === "prediction") return "prediction";
+  if (category === "copytrader") return "copytrader";
+  if (category === "technology") return "tech";
+  if (category === "culture") return "cultural";
+  return "other";
+};
+
+const engineStatusToUi = (status: EngineSourceStatus): UiSourceStatus => {
+  const category = toUiCategory(status.category);
+  const connectionStatus =
+    status.status === "connected"
+      ? "live"
+      : status.status === "needs_api_key" || status.status === "needs_oauth"
+        ? "auth_needed"
+        : status.status === "paid_required" || status.status === "platform_limited" || status.status === "unavailable" || status.status === "disabled"
+          ? "offline"
+          : status.status === "rate_limited"
+            ? "limited"
+            : "degraded";
+
+  return {
+    id: status.id,
+    label: status.name,
+    group: toFeedGroup(category),
+    category,
+    trustTier: status.connectionType === "public_api" ? 2 : 3,
+    status: connectionStatus,
+    count24h: status.latestItemCount,
+    lastAttemptAt: status.lastAttemptAt ?? undefined,
+    lastSuccessAt: status.lastSuccessAt ?? undefined,
+    lastError: status.lastError ?? undefined,
+    authRequired: status.needsApiKey,
+    enabled: status.enabled,
+    freshnessMinutes: status.connectionType === "public_api" ? 15 : 1440,
+    notes: status.lastError ?? `${status.connectionType} / ${status.status}`,
+  };
+};
+
+const engineItemToSignal = (item: FirebaseFirestore.DocumentData, index: number): SignalItem => {
+  const category = toUiCategory(typeof item.sourceCategory === "string" ? item.sourceCategory : undefined);
+  const source = typeof item.source === "string" ? item.source : "unknown";
+  const url = typeof item.url === "string" ? item.url : "";
+
+  return {
+    id: typeof item.id === "string" ? item.id : `${source}-${index}`,
+    displayNumber: index + 1,
+    sourceId: typeof item.sourceId === "string" ? item.sourceId : slugify(source),
+    sourceLabel: source.toUpperCase(),
+    category,
+    group: toFeedGroup(category),
+    trustTier: 2,
+    score: typeof item.confidence === "number" ? item.confidence : 0,
+    title: typeof item.title === "string" ? item.title : "Untitled signal",
+    url,
+    summary: typeof item.summary === "string" ? item.summary : "No summary provided by source.",
+    imageUrl: typeof item.imageUrl === "string" ? item.imageUrl : undefined,
+    domain: toDomain(url),
+    publishedAt: toIsoString(item.publishedAt) ?? toIsoString(item.ingestedAt) ?? new Date(0).toISOString(),
+    ingestedAt: toIsoString(item.ingestedAt) ?? new Date(0).toISOString(),
+    lastSeenAt: toIsoString(item.lastSeenAt),
+    seenCount: typeof item.seenCount === "number" ? item.seenCount : 1,
+    tags: [item.symbol, item.assetClass, item.signalType, source].filter((value): value is string => typeof value === "string"),
+    rawType: "ingested_item",
+    isPrediction: category === "prediction",
+    isOfficial: category === "institutional" || category === "insider",
+    isSocial: category === "social",
+    isSecurity: false,
+    isMarketMoving: category === "market" || category === "crypto" || category === "options",
+    symbol: typeof item.symbol === "string" ? item.symbol : null,
+    assetClass: typeof item.assetClass === "string" ? item.assetClass : null,
+    direction: typeof item.direction === "string" ? item.direction : "unknown",
+    confidence: typeof item.confidence === "number" ? item.confidence : null,
+    signalType: toSignalType(item.signalType),
+    importance: toSignalImportance(item.importance),
+    sourceUrl: url,
+    dedupeKey: typeof item.id === "string" ? item.id : undefined,
+    rawPayloadRef: url,
+    rawPayloadSummary: typeof item.rawJson === "string" ? item.rawJson : null,
+  };
+};
+
 const toIsoString = (value: unknown): string | null => {
   if (!value) return null;
   if (typeof value === "string") return value;
@@ -46,6 +150,30 @@ const toIsoString = (value: unknown): string | null => {
   return null;
 };
 
+const toSignalType = (value: unknown): SignalType | null => {
+  if (
+    value === "news" ||
+    value === "whale_move" ||
+    value === "options_flow" ||
+    value === "insider_trade" ||
+    value === "institutional_filing" ||
+    value === "social_attention" ||
+    value === "prediction_market" ||
+    value === "price_move" ||
+    value === "dex_activity" ||
+    value === "source_status" ||
+    value === "trader_profile"
+  ) {
+    return value;
+  }
+  return null;
+};
+
+const toSignalImportance = (value: unknown): SignalImportance => {
+  if (value === "urgent" || value === "high" || value === "medium" || value === "low") return value;
+  return "low";
+};
+
 const toPersistedSignal = (record: IncomingSignalRecord): PersistedSignalRecord => {
   const dedupeKey = computeDedupeKey(record);
   const ingestedAt = new Date().toISOString();
@@ -53,116 +181,49 @@ const toPersistedSignal = (record: IncomingSignalRecord): PersistedSignalRecord 
   return {
     id: dedupeKey,
     symbol: record.symbol ?? null,
-    assetClass: record.assetClass ?? null,
+    assetClass: record.assetClass ?? record.category ?? null,
     direction: record.direction ?? null,
     confidence: record.confidence ?? null,
     source: record.source,
+    sourceCategory: record.sourceCategory ?? null,
+    sourceStatus: record.sourceStatus ?? null,
     sourceUrl: record.sourceUrl ?? null,
+    sourceDomain: record.sourceDomain ?? toDomain(record.sourceUrl),
+    externalId: record.externalId ?? null,
     title: record.title,
     summary: record.summary ?? null,
+    imageUrl: record.imageUrl ?? null,
+    signalType: record.signalType ?? null,
+    importance: record.importance ?? "low",
+    rawJson: record.rawJson,
     publishedAt: record.publishedAt ?? null,
     ingestedAt,
+    lastSeenAt: ingestedAt,
+    seenCount: 1,
     dedupeKey,
     rawPayloadRef: record.rawPayloadRef ?? null,
     rawPayloadSummary: record.rawPayloadSummary ?? null,
   };
 };
 
-const docToPersistedSignal = (id: string, data: FirebaseFirestore.DocumentData): PersistedSignalRecord => ({
-  id: typeof data.id === "string" ? data.id : id,
-  symbol: typeof data.symbol === "string" ? data.symbol : null,
-  assetClass: typeof data.assetClass === "string" ? data.assetClass : null,
-  direction: typeof data.direction === "string" ? data.direction : null,
-  confidence: typeof data.confidence === "number" ? data.confidence : null,
-  source: typeof data.source === "string" ? data.source : "unknown",
-  sourceUrl: typeof data.sourceUrl === "string" ? data.sourceUrl : null,
-  title: typeof data.title === "string" ? data.title : "Untitled signal",
-  summary: typeof data.summary === "string" ? data.summary : null,
-  publishedAt: toIsoString(data.publishedAt),
-  ingestedAt: toIsoString(data.ingestedAt) ?? new Date(0).toISOString(),
-  dedupeKey: typeof data.dedupeKey === "string" ? data.dedupeKey : id,
-  rawPayloadRef: typeof data.rawPayloadRef === "string" ? data.rawPayloadRef : null,
-  rawPayloadSummary: typeof data.rawPayloadSummary === "string" ? data.rawPayloadSummary : null,
-});
-
-const persistedSignalToFeedItem = (record: PersistedSignalRecord, index: number): SignalItem => ({
-  ...record,
-  displayNumber: index + 1,
-  sourceId: slugify(record.source),
-  sourceLabel: record.source.toUpperCase(),
-  category: record.assetClass === "prediction" ? "prediction" : "news",
-  group: "news_narrative",
-  trustTier: 2,
-  score: record.confidence ?? 0,
-  url: record.sourceUrl ?? "",
-  sourceUrl: record.sourceUrl,
-  summary: record.summary ?? "No summary provided by source.",
-  domain: toDomain(record.sourceUrl),
-  publishedAt: record.publishedAt ?? record.ingestedAt,
-  tags: [record.symbol, record.assetClass, record.direction, record.source]
-    .filter((value): value is string => Boolean(value))
-    .map((value) => value.toUpperCase()),
-  rawType: "firestore:signal",
-  isPrediction: record.assetClass === "prediction",
-  isOfficial: false,
-  isSocial: false,
-  isSecurity: false,
-  isMarketMoving: Boolean(record.symbol || record.direction),
-});
-
-const toUiSourceStatus = (): UiSourceStatus[] =>
-  getEnabledRealSources().map((source) => ({
-    id: source.id,
-    label: source.name,
-    group: "news_narrative",
-    category: "news",
-    trustTier: 2,
-    status: source.enabled ? "planned" : "offline",
-    count24h: 0,
-    authRequired: source.authRequired,
-    enabled: source.enabled,
-    freshnessMinutes: 60,
-    notes:
-      source.status === "enabled"
-        ? "Configured and enabled. Run ingest to pull real records."
-        : "Source is disabled.",
-  }));
-
-const getLastPullAt = async (): Promise<string | null> => {
-  const result = await runFirestoreQuery(async (db) => {
-    const snapshot = await db
-      .collection("ingest_runs")
-      .orderBy("createdAt", "desc")
-      .limit(1)
-      .get();
-
-    if (snapshot.empty) return null;
-    const data = snapshot.docs[0]?.data();
-    return toIsoString(data?.createdAt) ?? toIsoString(data?.startedAt) ?? null;
+const mergeSourceOnlyRecords = (records: PersistedSignalRecord[]) => {
+  const byId = new Map<string, PersistedSignalRecord>();
+  sourceOnlyRecords.forEach((record) => {
+    byId.set(record.dedupeKey, record);
   });
-
-  return result.ok ? result.value : null;
-};
-
-const buildRegistryResponse = async () => {
-  const registry = getRegistryStatus();
-  const sources = toUiSourceStatus();
-  const lastPullAt = await getLastPullAt();
-
-  return {
-    sources,
-    items: sources,
-    status: registry.status,
-    message: registry.message,
-    lastPullAt,
-    healthy: 0,
-    notConfigured: sources.length === 0 ? 1 : 0,
-  };
+  records.forEach((record) => {
+    const existing = byId.get(record.dedupeKey);
+    byId.set(record.dedupeKey, existing ? { ...existing, ...record, ingestedAt: existing.ingestedAt, seenCount: existing.seenCount + 1 } : record);
+  });
+  sourceOnlyRecords = Array.from(byId.values()).sort(
+    (a, b) => new Date(b.ingestedAt).getTime() - new Date(a.ingestedAt).getTime(),
+  );
 };
 
 const saveSignals = async (incomingRecords: IncomingSignalRecord[]) => {
   return runFirestoreQuery(async (db) => {
     const addedRecords: PersistedSignalRecord[] = [];
+    let updatedCount = 0;
     let skippedDuplicateCount = 0;
 
     for (const incomingRecord of incomingRecords) {
@@ -171,7 +232,22 @@ const saveSignals = async (incomingRecords: IncomingSignalRecord[]) => {
 
       const added = await db.runTransaction(async (transaction) => {
         const existing = await transaction.get(signalRef);
-        if (existing.exists) return false;
+        if (existing.exists) {
+          const existingData = existing.data() ?? {};
+          transaction.set(
+            signalRef,
+            {
+              ...record,
+              ingestedAt: typeof existingData.ingestedAt === "string" ? existingData.ingestedAt : record.ingestedAt,
+              lastSeenAt: record.lastSeenAt,
+              seenCount: (typeof existingData.seenCount === "number" ? existingData.seenCount : 1) + 1,
+              updatedAt: FieldValue.serverTimestamp(),
+            },
+            { merge: true },
+          );
+          updatedCount += 1;
+          return false;
+        }
         transaction.set(signalRef, {
           ...record,
           createdAt: FieldValue.serverTimestamp(),
@@ -187,7 +263,7 @@ const saveSignals = async (incomingRecords: IncomingSignalRecord[]) => {
       }
     }
 
-    return { addedRecords, skippedDuplicateCount };
+    return { addedRecords, updatedCount, skippedDuplicateCount };
   });
 };
 
@@ -201,56 +277,109 @@ const recordIngestRun = async (payload: Record<string, unknown>) => {
 };
 
 router.get("/signals", async (req, res) => {
-  const lane = typeof req.query.lane === "string" ? req.query.lane.toLowerCase() : "";
-
-  const queryResult = await runFirestoreQuery(async (db) => {
-    const snapshot = await db.collection("signals").orderBy("ingestedAt", "desc").limit(100).get();
-    return snapshot.docs.map((doc) => docToPersistedSignal(doc.id, doc.data()));
+  const stored = await getStoredSignals({
+    category: typeof req.query.category === "string" ? req.query.category : undefined,
+    source: typeof req.query.source === "string" ? req.query.source : undefined,
+    q: typeof req.query.q === "string" ? req.query.q : undefined,
+    signalType: typeof req.query.signalType === "string" ? req.query.signalType : undefined,
+    sort: typeof req.query.sort === "string" ? req.query.sort : undefined,
+    limit: typeof req.query.limit === "string" ? Number(req.query.limit) : undefined,
+    offset: typeof req.query.offset === "string" ? Number(req.query.offset) : undefined,
   });
 
-  if (!queryResult.ok) {
+  if (stored.ok) {
+    const items = stored.value.items.map(engineItemToSignal);
     res.json({
-      items: [],
-      status: "storage_error",
-      message: queryResult.message,
+      items,
+      total: stored.value.total,
+      offset: stored.value.offset,
+      limit: stored.value.limit,
+      hasMore: stored.value.offset + items.length < stored.value.total,
+      status: "storageError" in stored ? "storage_error" : items.length > 0 ? "ok" : "empty",
+      message:
+        "storageError" in stored && items.length > 0
+          ? `${items.length} local real-data fallback item(s) loaded. Firestore degraded: ${stored.storageError}`
+          : items.length > 0
+          ? `${items.length} ingested item(s) loaded.`
+          : "No real signals have been ingested yet. Connect sources or click Ingest New Signals.",
     });
     return;
   }
 
-  let items = queryResult.value.map(persistedSignalToFeedItem);
-
-  if (lane) {
-    items = items.filter(
-      (signal) =>
-        signal.category.toLowerCase() === lane ||
-        signal.tags.some((tag) => tag.toLowerCase() === lane),
-    );
-  }
-
   res.json({
-    items,
-    status: items.length > 0 ? "ok" : "empty",
-    message:
-      items.length > 0
-        ? `${items.length} persisted signal(s) loaded from Firestore.`
-        : "No persisted signals yet. Configure sources and run ingest.",
+    items: [],
+    status: "storage_error",
+    message: "Firestore credentials unavailable. Configure Firebase Admin credentials or run in local fallback-disabled mode.",
+  });
+});
+
+router.get("/sources", async (_req, res) => {
+  const result = await getSourceStatuses();
+  res.json({
+    sources: result.sources,
+    status: result.ok ? "ok" : "storage_error",
+    message: result.ok
+      ? `${result.sources.length} source(s) loaded.`
+      : `Source registry loaded without persisted health. ${result.storageError}`,
+  });
+});
+
+router.get("/sources/health", async (_req, res) => {
+  const result = await getSourceHealthSummary();
+  const uiSources = result.sources.map(engineStatusToUi);
+  res.json({
+    ...result.summary,
+    sources: uiSources,
+    items: uiSources,
+    status: result.summary.storageError ? "storage_error" : "ok",
+    message: result.summary.storageError
+      ? `Firestore degraded: ${result.summary.storageError}`
+      : `${result.summary.healthy}/${result.summary.enabled} enabled source(s) connected.`,
+    lastPullAt: result.summary.lastSuccessAt,
+    notConfigured: result.summary.enabled === 0 ? 1 : 0,
+    lastError: result.summary.lastError,
+    credentialsMode: result.summary.storageError ? "firestore_degraded" : "firestore_connected",
+    credentialsMessage: result.summary.storageError
+      ? `Firestore credentials unavailable. Configure Firebase Admin credentials or run in local fallback-disabled mode. ${result.summary.storageError}`
+      : "Firestore connected.",
   });
 });
 
 router.get("/signals/health", async (_req, res) => {
-  res.json(await buildRegistryResponse());
+  const result = await getSourceHealthSummary();
+  const uiSources = result.sources.map(engineStatusToUi);
+  res.json({ ...result.summary, sources: uiSources, items: uiSources, lastPullAt: result.summary.lastSuccessAt });
 });
 
 router.get("/sources/status", async (_req, res) => {
-  res.json(await buildRegistryResponse());
+  const result = await getSourceHealthSummary();
+  const uiSources = result.sources.map(engineStatusToUi);
+  res.json({ ...result.summary, sources: uiSources, items: uiSources, lastPullAt: result.summary.lastSuccessAt });
 });
 
 router.get("/sources/registry", async (_req, res) => {
-  res.json(await buildRegistryResponse());
+  const result = await getSourceHealthSummary();
+  const uiSources = result.sources.map(engineStatusToUi);
+  res.json({
+    ...result.summary,
+    sources: uiSources,
+    items: uiSources,
+    status: result.summary.storageError ? "storage_error" : "ok",
+    message: result.summary.storageError ? `Firestore degraded: ${result.summary.storageError}` : "Source registry loaded.",
+    lastPullAt: result.summary.lastSuccessAt,
+    notConfigured: result.summary.enabled === 0 ? 1 : 0,
+    lastError: result.summary.lastError,
+    credentialsMode: result.summary.storageError ? "firestore_degraded" : "firestore_connected",
+    credentialsMessage: result.summary.storageError
+      ? `Firestore credentials unavailable. Configure Firebase Admin credentials or run in local fallback-disabled mode. ${result.summary.storageError}`
+      : "Firestore connected.",
+  });
 });
 
 router.get("/source-health", async (_req, res) => {
-  res.json(await buildRegistryResponse());
+  const result = await getSourceHealthSummary();
+  const uiSources = result.sources.map(engineStatusToUi);
+  res.json({ ...result.summary, sources: uiSources, items: uiSources, lastPullAt: result.summary.lastSuccessAt });
 });
 
 router.get("/signals/sources", (_req, res) => {
@@ -265,30 +394,40 @@ router.get("/signals/sources", (_req, res) => {
   });
 });
 
-router.post("/ingest", async (_req, res) => {
+router.post("/ingest/run", async (_req, res) => {
+  res.json(await runIngest());
+});
+
+router.post("/ingest/source/:sourceId", async (req, res) => {
+  res.json(await runIngest(req.params.sourceId));
+});
+
+const pullConfiguredSources = async () => {
   const connectors = getConfiguredSignalConnectors();
 
   if (connectors.length === 0) {
     const result: IngestResult = {
       addedCount: 0,
+      updatedCount: 0,
       skippedDuplicateCount: 0,
       records: [],
       errors: [],
     };
 
-    await recordIngestRun({
+    void recordIngestRun({
       ...result,
       connectorIds: [],
       status: "not_configured",
-      message: "No enabled real sources are configured yet.",
+      message: "Set TRND_FLWR_RSS_FEEDS or NEWS_RSS_FEEDS.",
     });
 
-    res.json({
+    return {
       ...result,
+      ok: false,
+      reason: "NO_SOURCES_CONFIGURED",
       status: "not_configured",
-      message: "No enabled real sources are configured yet.",
-    });
-    return;
+      message: "Set TRND_FLWR_RSS_FEEDS or NEWS_RSS_FEEDS.",
+    };
   }
 
   const errors: IngestError[] = [];
@@ -300,11 +439,15 @@ router.post("/ingest", async (_req, res) => {
     errors.push(...result.errors);
   }
 
+  const pulledRecords = fetchedRecords.map(toPersistedSignal);
+  mergeSourceOnlyRecords(pulledRecords);
+
   const saveResult = await saveSignals(fetchedRecords);
 
   if (!saveResult.ok) {
     const failedResult: IngestResult = {
       addedCount: 0,
+      updatedCount: 0,
       skippedDuplicateCount: 0,
       records: [],
       errors: [
@@ -316,7 +459,7 @@ router.post("/ingest", async (_req, res) => {
       ],
     };
 
-    await recordIngestRun({
+    void recordIngestRun({
       ...failedResult,
       connectorIds: connectors.map((connector) => connector.id),
       fetchedCount: fetchedRecords.length,
@@ -324,128 +467,51 @@ router.post("/ingest", async (_req, res) => {
       message: saveResult.message,
     });
 
-    res.json({
+    return {
       ...failedResult,
+      records: pulledRecords,
+      ok: false,
       status: "storage_error",
-      message: saveResult.message,
-    });
-    return;
+      message: `${saveResult.message} Live pull results are available in source-only mode for this session.`,
+    };
   }
 
   const result: IngestResult = {
     addedCount: saveResult.value.addedRecords.length,
+    updatedCount: saveResult.value.updatedCount,
     skippedDuplicateCount: saveResult.value.skippedDuplicateCount,
     records: saveResult.value.addedRecords,
     errors,
   };
 
-  await recordIngestRun({
+  void recordIngestRun({
     ...result,
     connectorIds: connectors.map((connector) => connector.id),
     fetchedCount: fetchedRecords.length,
     status: result.addedCount > 0 ? "ok" : errors.length > 0 ? "error" : "empty",
     message:
-      result.addedCount > 0
-        ? `Added ${result.addedCount} new signal(s).`
+      result.addedCount > 0 || result.updatedCount > 0
+        ? `Added ${result.addedCount} new signal(s), updated ${result.updatedCount} existing signal(s).`
         : "Pull completed with no new records.",
   });
 
-  res.json({
+  return {
     ...result,
+    ok: true,
     status: result.addedCount > 0 ? "ok" : errors.length > 0 ? "error" : "empty",
     message:
-      result.addedCount > 0
-        ? `Added ${result.addedCount} new signal(s).`
+      result.addedCount > 0 || result.updatedCount > 0
+        ? `Added ${result.addedCount} new signal(s), updated ${result.updatedCount} existing signal(s).`
         : "Pull completed with no new records.",
-  });
+  };
+};
+
+router.post("/ingest", async (_req, res) => {
+  res.json(await pullConfiguredSources());
 });
 
-router.post("/trend-insights", async (req, res) => {
-  const requestedIds: string[] = Array.isArray(req.body?.signalIds)
-    ? req.body.signalIds.filter((id: unknown): id is string => typeof id === "string")
-    : [];
-  const signalIds = requestedIds.slice(0, 10);
-
-  if (signalIds.length === 0) {
-    res.status(400).json({
-      error: "signalIds is required.",
-      status: "error",
-      message: "signalIds is required.",
-    });
-    return;
-  }
-
-  const loadResult = await runFirestoreQuery(async (db) => {
-    const snapshots = await Promise.all(
-      signalIds.map((id) => db.collection("signals").doc(id).get()),
-    );
-
-    return snapshots
-      .filter((snapshot) => snapshot.exists)
-      .map((snapshot) => docToPersistedSignal(snapshot.id, snapshot.data() ?? {}));
-  });
-
-  if (!loadResult.ok) {
-    res.status(503).json({
-      status: "storage_error",
-      message: loadResult.message,
-    });
-    return;
-  }
-
-  const records = loadResult.value;
-
-  if (records.length === 0) {
-    res.status(404).json({
-      status: "empty",
-      message: "No persisted signals found for the requested IDs.",
-    });
-    return;
-  }
-
-  const symbols = Array.from(
-    new Set(records.map((record) => record.symbol).filter((symbol): symbol is string => Boolean(symbol))),
-  );
-  const generatedText = [
-    `Trend insight from ${records.length} persisted signal${records.length === 1 ? "" : "s"}.`,
-    symbols.length > 0 ? `Symbols: ${symbols.join(", ")}.` : "No symbols were provided by the loaded sources.",
-    ...records.map((record) => {
-      const parts = [
-        record.title,
-        record.source ? `Source: ${record.source}` : null,
-        record.publishedAt ? `Published: ${record.publishedAt}` : null,
-        record.summary ? `Summary: ${record.summary}` : null,
-        record.direction ? `Direction: ${record.direction}` : null,
-        typeof record.confidence === "number" ? `Confidence: ${record.confidence}` : null,
-      ].filter(Boolean);
-
-      return `- ${parts.join(" | ")}`;
-    }),
-  ].join("\n");
-
-  const insight: TrendInsightRecord = {
-    signalIds: records.map((record) => record.id),
-    generatedText,
-    createdAt: new Date().toISOString(),
-    sourceCount: new Set(records.map((record) => record.source)).size,
-    symbols,
-    userAction: "copyable_trend_insight",
-  };
-
-  const saveInsight = await runFirestoreQuery(async (db) => {
-    const doc = await db.collection("trend_insights").add({
-      ...insight,
-      createdAtServer: FieldValue.serverTimestamp(),
-    });
-    return doc.id;
-  });
-
-  res.json({
-    id: saveInsight.ok ? saveInsight.value : undefined,
-    ...insight,
-    status: saveInsight.ok ? "ok" : "storage_error",
-    message: saveInsight.ok ? "Trend insight saved." : saveInsight.message,
-  });
+router.post("/sources/pull", async (_req, res) => {
+  res.json(await pullConfiguredSources());
 });
 
 router.post("/signals/:id/send-to-relay", (req, res) => {
